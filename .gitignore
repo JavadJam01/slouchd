@@ -1,0 +1,11 @@
+# compiled files
+__pycache__/
+*.py[cod]
+
+# virtual envs
+venv/
+.venv/
+
+# local config
+config.json
+*.log
