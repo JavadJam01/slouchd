@@ -1,6 +1,80 @@
 from PySide6.QtCore import Qt, QRect, QPointF, Slot
-from PySide6.QtWidgets import QWidget
-from PySide6.QtGui import QColor, QPainter, QGuiApplication, QRadialGradient, QBrush
+from PySide6.QtWidgets import QWidget, QLabel
+from PySide6.QtGui import (
+    QColor, QFont, QFontMetrics, QPainter, QGuiApplication,
+    QRadialGradient, QBrush, QPixmap
+)
+from src.config import get_resource_path
+
+class SlouchBanner(QWidget):
+    """transparent S logo followed by LOUCH"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+
+        self.font = QFont("Segoe UI", 88, QFont.Weight.Bold)
+        self.font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 16)
+
+        s_path = get_resource_path("assets/logo_s.png")
+        if not s_path.exists():
+            s_path = get_resource_path("assets/tray_icon.png")
+        self._s_pixmap = QPixmap(str(s_path)) if s_path.exists() else None
+
+        self.text = "LOUCH"
+        self._recalculate_size()
+
+    def _recalculate_size(self):
+        fm = QFontMetrics(self.font)
+        self.cap_height = fm.capHeight()
+        self.text_width = fm.horizontalAdvance(self.text)
+
+        if self._s_pixmap and not self._s_pixmap.isNull():
+            # S is 1.8 of font cap heigh
+            self.s_height = int(self.cap_height * 1.8)
+            sw, sh = self._s_pixmap.width(), self._s_pixmap.height()
+            self.s_width = int(self.s_height * (sw / sh)) if sh > 0 else int(self.s_height * 0.56)
+            self.gap = 20
+        else:
+            self.s_height = 0
+            self.s_width = 0
+            self.gap = 0
+            self.text = "SLOUCH"
+            self.text_width = fm.horizontalAdvance(self.text)
+
+        total_w = self.s_width + self.gap + self.text_width + 24
+        total_h = max(self.s_height, fm.height()) + 30
+        self.setFixedSize(total_w, total_h)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+
+        start_x = 12
+        mid_y = self.height() // 2
+        baseline_y = mid_y + self.cap_height // 2
+        color = QColor(239, 68, 68, 120)
+
+        if self._s_pixmap and not self._s_pixmap.isNull():
+            # Vertically center the larger S with the text
+            s_top = mid_y - self.s_height // 2
+            scaled_s = self._s_pixmap.scaled(
+                self.s_width, self.s_height,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation
+            )
+            painter.setOpacity(110 / 255.0)
+            painter.drawPixmap(start_x, s_top, scaled_s)
+            text_x = start_x + self.s_width + self.gap
+        else:
+            text_x = start_x
+
+        painter.setOpacity(1.0)
+        painter.setFont(self.font)
+        painter.setPen(color)
+        painter.drawText(text_x, baseline_y, self.text)
+        painter.end()
 
 class MultiScreenDimmer(QWidget):
     def __init__(self, config_manager):
@@ -8,7 +82,7 @@ class MultiScreenDimmer(QWidget):
         self.config = config_manager
         self._is_dimmed = False
 
-        self.setWindowFlags(
+        self.setWindowFlags(	# clickthrough transparent overlay flags
             Qt.WindowType.WindowStaysOnTopHint |
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.WindowTransparentForInput |
@@ -17,21 +91,48 @@ class MultiScreenDimmer(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+
+        self.banner = SlouchBanner(self)	# [S]louch! banner
+        self.label = self.banner
+
+        self.update_geometry()
+
+        app = QGuiApplication.instance()	# handle screen changes
+        if app:
+            app.screenAdded.connect(self._on_screens_changed)
+            app.screenRemoved.connect(self._on_screens_changed)
+            for screen in QGuiApplication.screens():
+                screen.geometryChanged.connect(self._on_screens_changed)
+
+    @Slot()
+    def _on_screens_changed(self, *args):
         self.update_geometry()
 
     def update_geometry(self):
+        """cover all screens and center banner on primary display"""
         screens = QGuiApplication.screens()
         if not screens:
             return
+
         combined_rect = QRect()
         for screen in screens:
             combined_rect = combined_rect.united(screen.geometry())
         self.setGeometry(combined_rect)
 
+        primary = QGuiApplication.primaryScreen() or screens[0]	# center banner on primary screen
+        p_geom = primary.geometry()
+        self.label.adjustSize()
+        hint = self.label.size()
+        rel_x = (p_geom.x() - combined_rect.x()) + (p_geom.width() - hint.width()) // 2
+        rel_y = (p_geom.y() - combined_rect.y()) + (p_geom.height() - hint.height()) // 2
+        self.label.move(rel_x, rel_y)
+
     def set_dimmed(self, dim: bool):
         if self._is_dimmed == dim:
             return
+
         self._is_dimmed = dim
+
         if dim:
             self.update_geometry()
             self.show()
@@ -40,6 +141,7 @@ class MultiScreenDimmer(QWidget):
             self.hide()
 
     def _draw_corner_glow(self, painter: QPainter, center_x: float, center_y: float, rect_x: int, rect_y: int, radius: int, glow_mult: float):
+        """smooth red glow from a corner"""
         grad = QRadialGradient(QPointF(center_x, center_y), float(radius))
         grad.setColorAt(0.00, QColor(248, 113, 113, int(220 * glow_mult)))
         grad.setColorAt(0.12, QColor(239, 68, 68, int(190 * glow_mult)))
@@ -52,23 +154,32 @@ class MultiScreenDimmer(QWidget):
     def paintEvent(self, event):
         if not self._is_dimmed:
             return
-        painter = QPainter(self)
-        opacity = float(self.config.get("dim_opacity", 0.65))
-        alpha = int(255 * max(0.0, min(1.0, opacity)))
-        painter.fillRect(self.rect(), QColor(0, 0, 0, alpha))
 
-        glow_mult = max(0.35, opacity)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
+        opacity = float(self.config.get("dim_opacity", 0.65))
+        opacity = max(0.0, min(1.0, opacity))
+        alpha = int(255 * opacity)
+
+        overlay_color = QColor(10, 10, 12, alpha)	# base dark dimming overlay
+        overlay_color = QColor(0, 0, 0, alpha)	# base dark dimming overlay
+        painter.fillRect(self.rect(), overlay_color)
+
+        glow_mult = max(0.35, opacity)	# draw ambient red glow at the corners of each connected display
         screens = QGuiApplication.screens()
         widget_pos = self.geometry().topLeft()
+
         for screen in screens:
             s_geom = screen.geometry()
             sx = s_geom.x() - widget_pos.x()
             sy = s_geom.y() - widget_pos.y()
             sw = s_geom.width()
             sh = s_geom.height()
+
             radius = max(240, int(min(sw, sh) * 0.42))
-            self._draw_corner_glow(painter, sx, sy, sx, sy, radius, glow_mult)
-            self._draw_corner_glow(painter, sx + sw, sy, sx + sw - radius, sy, radius, glow_mult)
-            self._draw_corner_glow(painter, sx, sy + sh, sx, sy + sh - radius, radius, glow_mult)
-            self._draw_corner_glow(painter, sx + sw, sy + sh, sx + sw - radius, sy + sh - radius, radius, glow_mult)
-        painter.end()
+
+            self._draw_corner_glow(painter, sx, sy, sx, sy, radius, glow_mult)	# top-left corner
+            self._draw_corner_glow(painter, sx + sw, sy, sx + sw - radius, sy, radius, glow_mult)	# top-right corner
+            self._draw_corner_glow(painter, sx, sy + sh, sx, sy + sh - radius, radius, glow_mult)	# bottom-left corner
+            self._draw_corner_glow(painter, sx + sw, sy + sh, sx + sw - radius, sy + sh - radius, radius, glow_mult)	# bottom-right corner
