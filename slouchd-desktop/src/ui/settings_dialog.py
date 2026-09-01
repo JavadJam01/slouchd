@@ -26,8 +26,8 @@ class SettingsDialog(QDialog):
         self.setFixedSize(520, 690)
         self.setStyleSheet("""
             QDialog {
-                background-color: #222226;
-                background-color: #18181B;
+                background-color: #121216;
+                background-color: #000000;
                 color: #E4E4E7;
                 font-family: 'Segoe UI', -apple-system, sans-serif;
             }
