@@ -1,4 +1,4 @@
-# slouchd
+![banner](</docs/assets/banner.png>)
 
 ## intro
 slouchd is a posture monitoring toolchain that currently has a desktop application and an opensource wearable hardware that we call "slouchd-tag". the purpose of this project is to build an alerting system that can detect when you slouch or loose your proper posture so it can warn you immediately. this immediate warning will be very helpful for those who have a habit of slouching when they are busy doing sth and they are unaware of their bad posture untill it really hearts and thats obviously too late for correcting it.
