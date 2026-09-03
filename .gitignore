@@ -1,11 +1,99 @@
 # compiled files
 __pycache__/
 *.py[cod]
+*$py.class
+
+# c extensions
+*.so
+
+# distribution and packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# pyinstaller
+*.manifest
+*.spec
+
+# installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# test and coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py.cover
+.hypothesis/
+.pytest_cache/
+cover/
 
 # virtual envs
 venv/
 .venv/
+env/
+ENV/
+env.bak/
+venv.bak/
 
-# local config
-config.json
+# ide and editor files
+.vscode/
+*.swp
+*.swo
+
+# os files
+Thumbs.db
+[Dd]esktop.ini
+.DS_Store
+*.stackdump
+
+# models and binaries
+*.task
+*.onnx
+
+# local config and logs
 *.log
+config.json
+.slouchd_config.json
+scratch/
+scratch_*.py
+
+# platformio artifacts
+.pio/
+.pioenvs/
+.piolibdeps/
+*.elf
+*.bin
+*.hex
+*.map
+
+# c/c++ tooling
+.clangd/
+compile_commands.json
+
+# model datasets
+models/data/
+*.csv
+*.joblib
+*.pkl
