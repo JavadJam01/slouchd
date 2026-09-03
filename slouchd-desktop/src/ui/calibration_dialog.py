@@ -46,9 +46,9 @@ class TagPostureMeter(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        painter.setBrush(QColor("#222226"))	# background
+        painter.setBrush(QColor("#18181B"))	# background
         painter.setPen(QPen(QColor("#27272A"), 1))
-        painter.drawRoundedRect(self.rect().adjusted(1, 1, -1, -1), 4, 4)
+        painter.drawRoundedRect(self.rect().adjusted(1, 1, -1, -1), 8, 8)
 
         if not self.is_connected:
             if "off" in self.status_message or "error" in self.status_message or "unavailable" in self.status_message:
@@ -95,7 +95,7 @@ class TagPostureMeter(QWidget):
 
         painter.setBrush(QColor("#27272A"))	# meter track
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawRoundedRect(meter_x, meter_y, meter_w, meter_h, 4, 4)
+        painter.drawRoundedRect(meter_x, meter_y, meter_w, meter_h, 8, 8)
 
         center_x = meter_x + meter_w // 2	# baseline marker
         painter.setPen(QPen(QColor("#10B981"), 2, Qt.PenStyle.DashLine))
@@ -215,7 +215,7 @@ class CalibrationDialog(QDialog):
         self.preview_label.setFixedSize(592, 280)
         self.preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.preview_label.setStyleSheet("""
-            background-color: #222226;
+            background-color: #18181B;
             border: 1px solid #27272A;
             border-radius: 8px;
         """)
@@ -282,7 +282,7 @@ class CalibrationDialog(QDialog):
             self.preview_label.clear()
             self.preview_label.setText("camera unavailable\ncheck if another app is using webcam")
             self.preview_label.setStyleSheet("""
-                background-color: #222226;
+                background-color: #18181B;
                 border: 1px solid #7F1D1D;
                 border-radius: 8px;
                 color: #EF4444;
@@ -303,7 +303,7 @@ class CalibrationDialog(QDialog):
         if source == "camera":
             self.preview_label.setText("connecting to video stream...")
             self.preview_label.setStyleSheet("""
-                background-color: #222226;
+                background-color: #18181B;
                 border: 1px solid #27272A;
                 border-radius: 8px;
                 color: #A1A1AA;
@@ -342,7 +342,7 @@ class CalibrationDialog(QDialog):
         if self.perception_source == "camera":
             self.preview_label.setText("connecting to video stream...")
             self.preview_label.setStyleSheet("""
-                background-color: #222226;
+                background-color: #18181B;
                 border: 1px solid #27272A;
                 border-radius: 8px;
                 color: #A1A1AA;
@@ -369,7 +369,7 @@ class CalibrationDialog(QDialog):
         self.latest_metrics = metrics
         if qimg is not None and not qimg.isNull():
             self.preview_label.setStyleSheet("""
-                background-color: #222226;
+                background-color: #18181B;
                 border: 1px solid #27272A;
                 border-radius: 8px;
             """)
