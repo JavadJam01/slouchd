@@ -78,13 +78,17 @@ or via tray menu:
 
 ![tray-source](/docs/assets/tray-source.png)
 
-- after selection wait for the app to find and connect to the tag:![alt text](/docs/assets/tag-connecting.png) 
+- after selection wait for the app to find and connect to the tag
+
+![alt text](/docs/assets/tag-connecting.png) 
 
 - **note** that if you previously changed your tag name, type that or some prefix of that in "tag device name" so the app can find it. (if you write a new name and apply it while the tag is connected, the wearbale tag will be renamed.) also note that other tag settings are grayed out untill you connect the device.
 
 ![tag not found](/docs/assets/tag-not-found.png)
 
-- now you should connect ![tag connected](/docs/assets/tag-connected.png)
+- now you should connect: 
+
+![tag connected](/docs/assets/tag-connected.png)
 - **note** that the default setting is to disable the vibration buzz while its connected to the app and just rely on screen dimming overlay and sound alerts on the desktop (to save batery life). but you can customize this behavior as well as threshold if you want:
 
 ![tag vibration settings](/docs/assets/tag-vibration-settings.png)
@@ -97,6 +101,7 @@ or via tray menu:
 - also the sound alert might not be a good idea in some places so also you can toggle it on/off based on your situation, moreover you can change the default sound if its not your taste.
 
 ![change sound](/docs/assets/change-sound-setting.png)
+
 **note:** these sound tracks are royalty free but some of them required attribution that i mentioned in the [**ATTRIBUTIONS.md**](</slouchd-desktop/assets/sounds/ATTRIBUTIONS.md>) (I really don't know if those windows xp cloned soundtracks are legal to use here, if you know i would appreciate if you open an issue)
 
 
