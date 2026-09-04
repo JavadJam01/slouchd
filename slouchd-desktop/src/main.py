@@ -12,6 +12,8 @@ from PySide6.QtGui import QIcon
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__) + "/.."))	# add project root to path
 
 from src.config import ConfigManager, get_resource_path
+from src.logging_config import setup_logging
+from src.startup import set_startup_enabled
 from src.audio import play_audio_file
 from src.camera.worker import CameraWorker
 from src.ble.worker import BleTagWorker
@@ -414,7 +416,32 @@ class SlouchdApp:
     def run(self):
         return self.app.exec()
 
+# ensure only one instance runs at a time
+_single_instance_mutex = None
+
+def acquire_single_instance_lock() -> bool:
+    global _single_instance_mutex
+    if sys.platform == "win32":
+        import ctypes
+        ERROR_ALREADY_EXISTS = 183
+        mutex_name = "Local\\slouchd_singleton_mutex"
+        kernel32 = ctypes.windll.kernel32
+        _single_instance_mutex = kernel32.CreateMutexW(None, False, mutex_name)
+        if kernel32.GetLastError() == ERROR_ALREADY_EXISTS:
+            return False
+    return True
+
 def main():
+    setup_logging()
+    if not acquire_single_instance_lock():
+        print("slouchd is already running. exiting duplicate instance.")
+        sys.exit(0)
+
+    try:	# auto register startup in hkcu on launch (no admin needed)
+        set_startup_enabled(True)
+    except Exception as e:
+        print(f"could not auto-register startup: {e}")
+
     app = SlouchdApp()
     sys.exit(app.run())
 

@@ -9,8 +9,20 @@ def get_resource_path(relative_path: str = "") -> Path:
     """returns absolute path to resource, working for dev and pyinstaller .exe"""
     if hasattr(sys, "_MEIPASS"):
         base = Path(sys._MEIPASS)
-    else:
-        base = Path(__file__).resolve().parent.parent
+        target = (base / relative_path) if relative_path else base
+        if target.exists() or not relative_path:
+            return target
+
+    if getattr(sys, "frozen", False):
+        exe_dir = Path(sys.executable).resolve().parent
+        target = (exe_dir / relative_path) if relative_path else exe_dir
+        if target.exists():
+            return target
+        target_internal = exe_dir / "_internal" / relative_path
+        if target_internal.exists():
+            return target_internal
+
+    base = Path(__file__).resolve().parent.parent
     return (base / relative_path) if relative_path else base
 
 DEFAULT_CONFIG = {
