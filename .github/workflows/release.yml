@@ -1,0 +1,87 @@
+name: release slouchd desktop
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'release tag name (e.g. v0.1.0)'
+        required: false
+        default: 'v0.1.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: build windows installer
+    runs-on: windows-latest
+
+    steps:
+      - name: checkout repository
+        uses: actions/checkout@v4
+
+      - name: set up python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'slouchd-desktop/requirements.txt'
+
+      - name: install python dependencies
+        shell: pwsh
+        run: |
+          cd slouchd-desktop
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pyinstaller
+
+      - name: install inno setup
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress
+          echo "C:\Program Files (x86)\Inno Setup 6" >> $env:GITHUB_PATH
+
+      - name: build with pyinstaller
+        shell: pwsh
+        run: |
+          cd slouchd-desktop
+          pyinstaller --noconfirm --clean slouchd.spec
+
+      - name: compile inno setup installer
+        shell: pwsh
+        run: |
+          cd slouchd-desktop
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer/slouchd.iss
+
+      - name: generate checksums
+        shell: pwsh
+        run: |
+          cd slouchd-desktop/dist/installer
+          Get-FileHash -Algorithm SHA256 *.exe | ForEach-Object { "$($_.Hash)  $($_.Path | Split-Path -Leaf)" } | Out-File -Encoding ascii SHA256SUMS.txt
+          Get-Content SHA256SUMS.txt
+
+      - name: determine release tag
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF -like "refs/tags/v*") {
+            $tag = $env:GITHUB_REF -replace "refs/tags/", ""
+          } else {
+            $tag = "${{ github.event.inputs.tag_name }}"
+            if (-not $tag) { $tag = "v0.1.0" }
+          }
+          echo "RELEASE_TAG=$tag" >> $env:GITHUB_ENV
+
+      - name: publish github release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: "slouchd ${{ env.RELEASE_TAG }}"
+          files: |
+            slouchd-desktop/dist/installer/*.exe
+            slouchd-desktop/dist/installer/SHA256SUMS.txt
+          draft: false
+          prerelease: false
+          generate_release_notes: true

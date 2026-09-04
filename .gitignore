@@ -29,6 +29,7 @@ MANIFEST
 # pyinstaller
 *.manifest
 *.spec
+!slouchd-desktop/slouchd.spec
 
 # installer logs
 pip-log.txt
@@ -71,6 +72,7 @@ Thumbs.db
 # models and binaries
 *.task
 *.onnx
+!slouchd-desktop/assets/models/*.task
 
 # local config and logs
 *.log
