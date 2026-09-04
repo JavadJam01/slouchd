@@ -1,6 +1,6 @@
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QRectF
 from PySide6.QtWidgets import QSystemTrayIcon, QMenu
-from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QAction, QActionGroup
+from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QAction, QActionGroup, QPainterPath
 
 from src.config import get_resource_path
 
@@ -9,38 +9,56 @@ _TRAY_BASE_PIXMAP = None
 def _get_base_tray_pixmap():
     global _TRAY_BASE_PIXMAP
     if _TRAY_BASE_PIXMAP is None:
-        icon_path = get_resource_path("assets/tray_icon.png")
+        icon_path = get_resource_path("assets/logo_s.png")
+        if not icon_path.exists():
+            icon_path = get_resource_path("assets/tray_icon.png")
         if icon_path.exists():
             _TRAY_BASE_PIXMAP = QPixmap(str(icon_path))
     return _TRAY_BASE_PIXMAP
 
-def create_tray_icon(color_hex="#10B981"):
-    """tray icon using the S logo tinted with status color (circle fallback)"""
+def create_tray_icon(bg_color_hex="#22C55E", s_color_hex="#6B111A"):
+    """solid status badge with dark red S logo cutting through full height"""
     base_pix = _get_base_tray_pixmap()
 
     if base_pix is not None and not base_pix.isNull():
         icon = QIcon()
-        for size in (16, 24, 32, 48, 64):
-            scaled = base_pix.scaled(
-                size, size,
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation
-            )
+        for size in (16, 20, 24, 32, 48, 64):
+            margin = 0.5 if size <= 20 else 1.0
             pixmap = QPixmap(size, size)
             pixmap.fill(QColor(0, 0, 0, 0))
 
             painter = QPainter(pixmap)
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
 
-            x = (size - scaled.width()) // 2
-            y = (size - scaled.height()) // 2
-            painter.drawPixmap(x, y, scaled)
+            radius = max(2.0, (size - 2 * margin) * 0.24)
+            path = QPainterPath()
+            rect = QRectF(margin, margin, size - 2 * margin, size - 2 * margin)
+            path.addRoundedRect(rect, radius, radius)
 
-            if color_hex and color_hex.upper() != "#EF4444":
-                painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
-                painter.fillRect(pixmap.rect(), QColor(color_hex))
+            # clip to squircle badge and fill with status background color
+            painter.setClipPath(path)
+            painter.fillPath(path, QColor(bg_color_hex))
 
+            # scale S to full badge height
+            h = int(round(size - 2 * margin))
+            scaled_s = base_pix.scaledToHeight(h, Qt.TransformationMode.SmoothTransformation)
+            w = scaled_s.width()
+            x = (size - w) // 2
+
+            # tint S to dark red
+            s_pix = QPixmap(w, h)
+            s_pix.fill(QColor(0, 0, 0, 0))
+            sp = QPainter(s_pix)
+            sp.setRenderHint(QPainter.RenderHint.Antialiasing)
+            sp.drawPixmap(0, 0, scaled_s)
+            sp.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
+            sp.fillRect(s_pix.rect(), QColor(s_color_hex))
+            sp.end()
+
+            painter.drawPixmap(x, int(round(margin)), s_pix)
             painter.end()
+
             icon.addPixmap(pixmap)
         return icon
 
@@ -56,7 +74,7 @@ def create_tray_icon(color_hex="#10B981"):
     painter.setPen(Qt.PenStyle.NoPen)
     painter.drawEllipse(6, 6, size - 12, size - 12)
 
-    painter.setBrush(QColor(color_hex))	# status dot
+    painter.setBrush(QColor(bg_color_hex))	# status dot
     painter.drawEllipse(10, 10, size - 20, size - 20)
     painter.end()
 
@@ -70,12 +88,13 @@ _ICON_BLUE = None
 
 def _init_icons():
     global _ICON_AMBER, _ICON_GREY, _ICON_RED, _ICON_GREEN, _ICON_BLUE
+    s_red = "#6B111A"  # signature dark red for the S logo
     if _ICON_AMBER is None:
-        _ICON_AMBER = create_tray_icon("#F59E0B")
-        _ICON_GREY = create_tray_icon("#6B7280")
-        _ICON_RED = create_tray_icon("#EF4444")
-        _ICON_GREEN = create_tray_icon("#10B981")
-        _ICON_BLUE = create_tray_icon("#3B82F6")
+        _ICON_AMBER = create_tray_icon("#F59E0B", s_red)
+        _ICON_GREY = create_tray_icon("#9CA3AF", s_red)
+        _ICON_RED = create_tray_icon("#F87171", s_red)   # lighter coral red for slouch status
+        _ICON_GREEN = create_tray_icon("#22C55E", s_red)
+        _ICON_BLUE = create_tray_icon("#38BDF8", s_red)
 
 class SlouchdTrayIcon(QSystemTrayIcon):
     calibrate_requested = Signal()
