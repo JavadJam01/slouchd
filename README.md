@@ -11,44 +11,13 @@ the desktop app is just a software or i rather call it a deamon that can watch y
 but there are people out there who don't want their webcam to be working all the time (note that again that our software is totally offline and also **opensource** so you can investigate it yourself and i appreciate it) or even they might have no webcam or proper drivers for it on their desired operating system, but they deserve a good posture too. if this sounds like you, then if you don't mind assembling and tinkering with some hardware, i prepared an esp32 based wearbale so you can build it yourself with the specifications provided in this project and then you flash our firmware onto it and start using it seamlessly instead of a webcam. good news that this method is gonna be even lighter on your cpu and ram, and also it can keep you alert about your posture in standalone mode (when you are not using your desktop and our software and you are out for a walk, via haptic vibrations). 
 
 ## installation
-currently im working on bundling the app as a single executable (.rpm, .deb, .exe, ...) so you can install it with a click and use it out of the box.
-but now its still in development so you have to do this the hard way (terminal) in order to test it. 
+you can grab the prebuilt installer directly from the releases page so you can install it with a click and use it out of the box:
 
-first clone the repo somewwhere:
+👉 [**download latest installer**](https://github.com/JavadJam01/slouchd/releases/latest) (or check [all releases](https://github.com/JavadJam01/slouchd/releases))
 
-```
-git clone https://github.com/JavadJam01/slouchd
-```
+just download the installer for your system, run it, and you're good to go.
 
-then cd to the slouchd-desktop:
-```
-cd slouchd
-cd slouchd-desktop
-```
-
-and then make sure you have python 3.10+ installed and do the following
-
-```
-python -m venv venv
-```
-after you created the virtual env now you have to activate it:
-
-- if you are on linux/mac:
-```
-source venv/bin/activate
-```
-- but if you are on windows:
-```
-.\venv\Scripts\Activate.ps1
-```
-then install the dependencies:
-```
-pip install -r requirements.txt
-```
-then you can simply run it:
-```
-python src/main.py
-```
+**note for windows users:** when downloading, your browser (especially microsoft edge) might try to discard or block the download, or windows smartscreen might show an unrecognized app warning during installation. dont worry, this is completely normal for fresh releases without an expensive code-signing certificate. our software is 100% opensource and safe (you can review all the code here yourself). we also scanned the installer on virustotal and it has a completely clean score of **0/67** (check the [virustotal report](https://www.virustotal.com/gui/file/2cf6755f217ec23424813124ad54270ffd4fcca8bef4bc78e5b3f69f3334ef79/detection)). this warning is temporary untill we submit the binary to microsoft to get it whitelisted. for now, you can just click "keep" (or "keep anyway") in your browser, and on windows smartscreen click "more info" -> "run anyway".
 
 ## usage
 now lets talk about the usage:

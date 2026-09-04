@@ -14,6 +14,16 @@ as mentioned in the main readme, slouchd-desktop supports two perception sources
 - **customizable sensitivity & grace period**: you can adjust grace period (1s to 10s) and slouch angle threshold so you don't get annoyed by false alarms during natural movement.
 - **sound alerts**: optional sound warnings if screen dimming alone isn't enough to catch your attention.
 
+## installation
+
+the easiest way is to grab the installer directly from our releases:
+
+👉 [**download latest installer**](https://github.com/JavadJam01/slouchd/releases/latest)
+
+just download and run it to use slouchd right out of the box.
+
+**note for windows users:** your browser (like edge) might try to discard or flag the download, and windows smartscreen might show an unrecognized app warning when you run the installer. this is normal for new unsigned software and completely safe/opensource. we also scanned the installer on virustotal and it has a completely clean score of **0/67** (check the [virustotal report](https://www.virustotal.com/gui/file/2cf6755f217ec23424813124ad54270ffd4fcca8bef4bc78e5b3f69f3334ef79/detection)). this is temporary untill we submit the binary to microsoft to whitelist it. in edge choose "keep" / "keep anyway", and in smartscreen click "more info" -> "run anyway".
+
 ## calibration
 
 first thing you need to do is to calibrate your baseline posture:
