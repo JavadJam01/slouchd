@@ -1,14 +1,16 @@
 import sys
-from PySide6.QtCore import Qt, Signal, QByteArray, QUrl, QRectF, QSize
+from PySide6.QtCore import Qt, Signal, QByteArray, QUrl, QRectF, QSize, QPoint
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTabWidget, QScrollArea
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTabWidget, QScrollArea, QMenu
 )
 from PySide6.QtGui import QIcon, QPixmap, QPainter, QDesktopServices
 from PySide6.QtSvg import QSvgRenderer
+from src import __version__
 from src.config import get_resource_path
 from src.ui.calibration_dialog import CalibrationDialog
 from src.ui.settings_dialog import SettingsDialog
 from src.ui.system_tray import draw_battery_icon
+from src.ui.updater import UpdateDialog
 
 GITHUB_SVG = """<svg viewBox="0 0 16 16" width="20" height="20">
 <path fill="{color}" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
@@ -48,6 +50,111 @@ class GitHubButton(QPushButton):
 
     def _open_repo(self):
         QDesktopServices.openUrl(QUrl("https://github.com/JavadJam01/slouchd"))
+
+KEBAB_SVG = """<svg viewBox="0 0 16 16" width="20" height="20">
+<circle cx="8" cy="3" r="1.5" fill="{color}"/>
+<circle cx="8" cy="8" r="1.5" fill="{color}"/>
+<circle cx="8" cy="13" r="1.5" fill="{color}"/>
+</svg>"""
+
+def _render_kebab_pixmap(color: str = "#71717A", size: int = 20) -> QPixmap:
+    scale = 2
+    renderer = QSvgRenderer(QByteArray(KEBAB_SVG.format(color=color).encode("utf-8")))
+    pix = QPixmap(size * scale, size * scale)
+    pix.fill(Qt.GlobalColor.transparent)
+    pix.setDevicePixelRatio(scale)
+    painter = QPainter(pix)
+    renderer.render(painter, QRectF(0, 0, size, size))
+    painter.end()
+    return pix
+
+class MoreOptionsMenuButton(QPushButton):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip("options & updates")
+        self.setFixedSize(24, 24)
+        self.pix_normal = _render_kebab_pixmap("#71717A", 20)
+        self.pix_hover = _render_kebab_pixmap("#FFFFFF", 20)
+        self.setIcon(QIcon(self.pix_normal))
+        self.setIconSize(self.pix_normal.size() / self.pix_normal.devicePixelRatio())
+        self.setStyleSheet("background: transparent; border: none; padding: 0px;")
+        self._update_available = False
+        self._latest_res = None
+        self.clicked.connect(self._show_menu)
+
+    def set_update_available(self, available: bool = True, latest_res: dict = None):
+        self._update_available = available
+        self._latest_res = latest_res
+        color = "#22C55E" if available else "#71717A"
+        self.pix_normal = _render_kebab_pixmap(color, 20)
+        self.setIcon(QIcon(self.pix_normal))
+        if available:
+            self.setToolTip("update available! click for options")
+        else:
+            self.setToolTip("options & updates")
+
+    def enterEvent(self, event):
+        self.setIcon(QIcon(self.pix_hover))
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.setIcon(QIcon(self.pix_normal))
+        super().leaveEvent(event)
+
+    def _show_menu(self):
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #121216;
+                color: #E4E4E7;
+                border: 1px solid #27272A;
+                border-radius: 8px;
+                padding: 6px;
+                font-family: 'Segoe UI', -apple-system, sans-serif;
+                font-size: 13px;
+            }
+            QMenu::item {
+                padding: 7px 16px;
+                border-radius: 5px;
+            }
+            QMenu::item:selected {
+                background-color: #27272A;
+                color: #FFFFFF;
+            }
+            QMenu::item:disabled {
+                color: #A1A1AA;
+                font-weight: 600;
+                background-color: transparent;
+                padding-bottom: 4px;
+            }
+            QMenu::separator {
+                height: 1px;
+                background: #27272A;
+                margin: 4px 6px;
+            }
+        """)
+
+        # current version info
+        ver_action = menu.addAction(f"slouchd v{__version__}")
+        ver_action.setEnabled(False)
+
+        menu.addSeparator()
+
+        # check for update option
+        label = "update available!" if self._update_available else "check for updates..."
+        update_action = menu.addAction(label)
+        update_action.triggered.connect(lambda: self._open_update_dialog())
+
+        releases_action = menu.addAction("release notes")
+        releases_action.triggered.connect(lambda: QDesktopServices.openUrl(QUrl("https://github.com/JavadJam01/slouchd/releases")))
+
+        menu.exec(self.mapToGlobal(QPoint(0, self.height() + 4)))
+
+    def _open_update_dialog(self, preloaded_result=None):
+        res = preloaded_result or self._latest_res
+        dlg = UpdateDialog(__version__, preloaded_result=res, parent=self.window())
+        dlg.exec()
 
 class CornerContainer(QWidget):
     # fixed width container to keep tabs centered
@@ -164,15 +271,17 @@ class SlouchdWindow(QWidget):
         self.settings_scroll.setWidget(self.settings_page)
         self.tabs.addTab(self.settings_scroll, "settings")
 
-        # github button on top left
+        # three-dot options menu and github button on top left
         self.left_container = CornerContainer(110, 40, self)
         self.left_container.setStyleSheet("background: transparent;")
         left_layout = QHBoxLayout(self.left_container)
-        left_layout.setContentsMargins(24, 0, 0, 12)
-        left_layout.setSpacing(0)
+        left_layout.setContentsMargins(20, 0, 0, 12)
+        left_layout.setSpacing(10)
         left_layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
+        self.options_btn = MoreOptionsMenuButton(self.left_container)
         self.github_btn = GitHubButton(self.left_container)
+        left_layout.addWidget(self.options_btn)
         left_layout.addWidget(self.github_btn)
         self.tabs.setCornerWidget(self.left_container, Qt.Corner.TopLeftCorner)
 
@@ -209,6 +318,12 @@ class SlouchdWindow(QWidget):
         self.show()
         self.raise_()
         self.activateWindow()
+
+    def open_update_dialog(self, preloaded_result: dict = None):
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        self.options_btn._open_update_dialog(preloaded_result=preloaded_result)
 
     def _on_tab_changed(self, index: int):
         is_calibrate = (index == 0)

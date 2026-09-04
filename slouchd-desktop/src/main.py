@@ -11,6 +11,7 @@ from PySide6.QtGui import QIcon
 
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__) + "/.."))	# add project root to path
 
+from src import __version__
 from src.config import ConfigManager, get_resource_path
 from src.logging_config import setup_logging
 from src.startup import set_startup_enabled
@@ -20,6 +21,7 @@ from src.ble.worker import BleTagWorker
 from src.ui.overlay import MultiScreenDimmer
 from src.ui.system_tray import SlouchdTrayIcon
 from src.ui.main_window import SlouchdWindow
+from src.ui.updater import PeriodicUpdateChecker
 
 class SlouchdApp:
     def __init__(self):
@@ -89,6 +91,29 @@ class SlouchdApp:
         self.apply_perception_source(curr_source)
 
         self._check_initial_calibration()	# check initial calibration
+
+        # background periodic update checker
+        self._last_update_res = None
+        self.update_checker = PeriodicUpdateChecker(__version__, parent=self.app)
+        self.update_checker.update_available.connect(self._on_update_available)
+        self.tray.messageClicked.connect(self._on_tray_message_clicked)
+        self.update_checker.start(initial_delay_sec=15)
+
+    def _on_update_available(self, res: dict):
+        self._last_update_res = res
+        latest = res.get("latest_version")
+        self.main_window.options_btn.set_update_available(True, latest_res=res)
+        self.tray.showMessage(
+            "slouchd update available",
+            f"version v{latest} is available. click to download and update.",
+            SlouchdTrayIcon.MessageIcon.Information,
+            8000
+        )
+
+    def _on_tray_message_clicked(self):
+        if self._last_update_res:
+            self.main_window.open_update_dialog(self._last_update_res)
+            self._last_update_res = None
 
     def _check_initial_calibration(self):
         source = self.config.get("perception_source", "tag")
