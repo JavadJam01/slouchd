@@ -19,8 +19,7 @@ from src.camera.worker import CameraWorker
 from src.ble.worker import BleTagWorker
 from src.ui.overlay import MultiScreenDimmer
 from src.ui.system_tray import SlouchdTrayIcon
-from src.ui.calibration_dialog import CalibrationDialog
-from src.ui.settings_dialog import SettingsDialog
+from src.ui.main_window import SlouchdWindow
 
 class SlouchdApp:
     def __init__(self):
@@ -55,13 +54,15 @@ class SlouchdApp:
         self._tag_connected = False
         self._latest_tag_data = None
         self._camera_error_notified = False
-        self.calibration_dialog = None
-        self.settings_dialog = None
-
         self._init_audio()	# init audio
 
         self.ble_worker = BleTagWorker(self.config)	# workers setup
         self.camera_worker = CameraWorker(self.config)
+
+        self.main_window = SlouchdWindow(self.config)
+        self.main_window.tag_calibrate_requested.connect(self.ble_worker.calibrate)
+        self.main_window.settings_changed.connect(self.on_settings_changed)
+        self.main_window.camera_preview_needed.connect(self.on_camera_preview_needed)
 
         self.ble_worker.tag_connected.connect(self.on_tag_connected)	# connect ble signals
         self.ble_worker.tag_data.connect(self.on_tag_data)
@@ -118,7 +119,7 @@ class SlouchdApp:
         if not self.ble_worker.isRunning():
             self.ble_worker.start()
 
-        is_calibrating = bool(self.calibration_dialog and self.calibration_dialog.isVisible())
+        is_calibrating = bool(self.main_window.isVisible() and self.main_window.tabs.currentIndex() == 0)
 
         if source == "tag":
             self.camera_worker.set_preview_mode(False)	# tag mode: release camera and unpause ble
@@ -135,10 +136,7 @@ class SlouchdApp:
                 self.camera_worker.set_paused(self.tray.is_paused)
 
         self.tray.set_source(source)
-        if is_calibrating:
-            self.calibration_dialog.set_source(source)
-        if self.settings_dialog is not None:
-            self.settings_dialog.set_source(source)
+        self.main_window.set_source(source)
 
     @Slot(str)
     def switch_perception_source(self, source: str):
@@ -150,15 +148,7 @@ class SlouchdApp:
         prev_connected = self._tag_connected
         self._tag_connected = is_connected
         self.tray.set_tag_status(is_connected)
-        if self.settings_dialog is not None:
-            self.settings_dialog.set_tag_connected(is_connected)
-        if self.calibration_dialog is not None:
-            if is_connected:
-                self.calibration_dialog.tag_meter.is_connected = True
-                if self._latest_tag_data:
-                    self.calibration_dialog.update_tag_data(self._latest_tag_data)
-            else:
-                self.calibration_dialog.tag_meter.set_disconnected()
+        self.main_window.set_tag_connected(is_connected)
         if is_connected:
             clean_name = dev_name.lower() if dev_name else "slouchd-tag"
             self.tray.showMessage(
@@ -180,18 +170,13 @@ class SlouchdApp:
     @Slot(int)
     def on_tag_battery(self, bat_pct: int):
         self.tray.set_tag_status(True, bat_pct)
-        if self.settings_dialog is not None:
-            self.settings_dialog.set_tag_battery(bat_pct)
-        if self.calibration_dialog is not None:
-            self.calibration_dialog.set_tag_battery(bat_pct)
+        self.main_window.set_tag_battery(bat_pct)
 
     @Slot(str)
     def on_tag_status(self, msg: str):
         clean_msg = msg.lower()
-        if self.settings_dialog is not None:
-            self.settings_dialog.set_tag_status_text(clean_msg)
-        if self.calibration_dialog is not None:
-            self.calibration_dialog.set_tag_status_text(clean_msg)
+        self.tray.set_tag_status_text(clean_msg)
+        self.main_window.set_tag_status_text(clean_msg)
 
     @Slot(str)
     def on_tag_error(self, err: str):
@@ -206,17 +191,20 @@ class SlouchdApp:
         elif "connection" in err_lower or "timeout" in err_lower:
             clean_err = "tag connection error"
 
-        if self.settings_dialog is not None:
-            self.settings_dialog.set_tag_status_text(clean_err, is_error=True)
-        if self.calibration_dialog is not None:
-            self.calibration_dialog.set_tag_status_text(clean_err, is_error=True)
+        self.tray.set_tag_status_text(clean_err, is_error=True)
+        self.main_window.set_tag_status_text(clean_err, is_error=True)
 
     @Slot(dict)
     def on_tag_data(self, data: dict):
         self._latest_tag_data = data
 
-        if self.calibration_dialog is not None and self.calibration_dialog.isVisible():
-            self.calibration_dialog.update_tag_data(data)
+        if "battery" in data and data["battery"] >= 0:
+            if self.tray.battery_pct < 0:
+                self.tray.set_tag_status(True, data["battery"])
+            if self.main_window.tag_battery_pct < 0:
+                self.main_window.set_tag_battery(data["battery"])
+
+        self.main_window.update_tag_data(data)
 
         if self.config.get("perception_source", "tag") != "tag":
             return
@@ -261,8 +249,8 @@ class SlouchdApp:
 
         self._camera_error_notified = False
 
-        if qimg is not None and self.calibration_dialog and self.calibration_dialog.isVisible():
-            self.calibration_dialog.update_frame(qimg, metrics)
+        if qimg is not None:
+            self.main_window.update_frame(qimg, metrics)
 
         if self.tray.is_paused:
             self.dimmer.set_dimmed(False)
@@ -318,8 +306,7 @@ class SlouchdApp:
 
     @Slot(str)
     def on_camera_error(self, err_msg):
-        if self.calibration_dialog is not None and self.calibration_dialog.isVisible():
-            self.calibration_dialog.set_camera_error(err_msg)
+        self.main_window.set_camera_error(err_msg)
         if self.config.get("perception_source", "tag") == "camera":
             if not self._camera_error_notified:
                 self._camera_error_notified = True
@@ -334,47 +321,24 @@ class SlouchdApp:
 
     @Slot()
     def open_calibration(self):
-        source = self.config.get("perception_source", "tag")
-        if not self.calibration_dialog:
-            self.calibration_dialog = CalibrationDialog(self.config)
-            self.calibration_dialog.tag_calibrate_requested.connect(self.ble_worker.calibrate)
-            self.calibration_dialog.finished.connect(self.on_calibration_closed)
-        
-        self.calibration_dialog.set_source(source)
-        if source == "tag":
-            if self._tag_connected or self.ble_worker.is_connected:
-                self.calibration_dialog.tag_meter.is_connected = True
-                if self._latest_tag_data:
-                    self.calibration_dialog.update_tag_data(self._latest_tag_data)
-            else:
-                self.calibration_dialog.tag_meter.set_disconnected()
-        if source == "camera":
-            self.camera_worker.set_paused(False)
-            self.camera_worker.set_preview_mode(True)
-        else:
-            self.camera_worker.set_preview_mode(False)
-            self.camera_worker.set_paused(True)
-
-        self.calibration_dialog.show()
-        self.calibration_dialog.raise_()
-        self.calibration_dialog.activateWindow()
-
-    def on_calibration_closed(self):
-        self.camera_worker.set_preview_mode(False)
-        curr_source = self.config.get("perception_source", "tag")
-        if curr_source == "tag":
-            self.camera_worker.set_paused(True)
-        else:
-            self.camera_worker.set_paused(self.tray.is_paused)
+        self.open_window("calibrate")
 
     @Slot()
     def open_settings(self):
-        if not self.settings_dialog:
-            self.settings_dialog = SettingsDialog(self.config)
-            self.settings_dialog.settings_changed.connect(self.on_settings_changed)
-            self.settings_dialog.calibrate_requested.connect(self.open_calibration)
-        self.settings_dialog.set_tag_connected(self._tag_connected or self.ble_worker.is_connected)
-        self.settings_dialog.exec()
+        self.open_window("settings")
+
+    def open_window(self, tab: str = "calibrate"):
+        source = self.config.get("perception_source", "tag")
+        self.main_window.set_source(source)
+        if source == "camera" and tab.lower() in ("calibrate", "calibration", "posture"):
+            self.camera_worker.set_paused(False)
+            self.camera_worker.set_preview_mode(True)
+        self.main_window.show_tab(tab)
+
+    def on_camera_preview_needed(self, needed: bool):
+        if self.config.get("perception_source", "tag") == "camera":
+            self.camera_worker.set_preview_mode(needed)
+            self.camera_worker.set_paused(self.tray.is_paused if not needed else False)
 
     @Slot(dict)
     def on_settings_changed(self, new_settings: dict):

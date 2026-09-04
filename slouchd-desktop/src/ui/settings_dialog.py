@@ -23,7 +23,7 @@ class SettingsDialog(QDialog):
         self._tag_status_is_error = False
         
         self.setWindowTitle("slouchd settings")
-        self.setFixedSize(520, 690)
+        self.setMinimumWidth(540)
         self.setStyleSheet("""
             QDialog {
                 background-color: #121216;
@@ -234,53 +234,42 @@ class SettingsDialog(QDialog):
         """)
 
         layout = QVBoxLayout(self)
-        layout.setSpacing(12)
-        layout.setContentsMargins(18, 12, 18, 16)
+        layout.setSpacing(14)
+        layout.setContentsMargins(24, 16, 24, 20)
 
         src_group = QGroupBox("perception source", self)	# perception source selector group
         src_layout = QVBoxLayout(src_group)
-        src_layout.setSpacing(8)
-
-        cal_btn_style = """
-            QPushButton {
-                background-color: #27272A;
-                color: #F4F4F5;
-                font-size: 12px;
-                font-weight: 600;
-                padding: 4px 12px;
-                border-radius: 6px;
-                border: 1px solid #3F3F46;
-            }
-            QPushButton:hover {
-                background-color: #2D1517;
-                border-color: #DC2626;
-                color: #FFFFFF;
-            }
-            QPushButton:disabled {
-                background-color: #18181B;
-                color: #52525B;
-                border-color: #27272A;
-            }
-        """
+        src_layout.setSpacing(10)
+        src_layout.setContentsMargins(14, 12, 14, 14)
 
         tag_row = QHBoxLayout()	# tag perception option
+        tag_row.setSpacing(10)
         self.radio_tag = QRadioButton("wearable tag (ble)", self)
-        self.btn_cal_tag = QPushButton("calibrate", self)
-        self.btn_cal_tag.setStyleSheet(cal_btn_style)
-        self.btn_cal_tag.clicked.connect(self._calibrate_tag)
         tag_row.addWidget(self.radio_tag)
+
+        tag_row.addSpacing(16)
+        self.tag_status_hint = QLabel(self)	# tag connection status
+        self.tag_status_hint.setStyleSheet("color: #71717A; font-size: 12px; font-style: italic;")
+        tag_row.addWidget(self.tag_status_hint)
         tag_row.addStretch()
-        tag_row.addWidget(self.btn_cal_tag)
         src_layout.addLayout(tag_row)
 
-        cam_row = QHBoxLayout()	# webcam perception option
-        self.radio_camera = QRadioButton("webcam (computer vision)", self)
-        self.btn_cal_cam = QPushButton("calibrate", self)
-        self.btn_cal_cam.setStyleSheet(cal_btn_style)
-        self.btn_cal_cam.clicked.connect(self._calibrate_cam)
+        cam_row = QHBoxLayout()	# webcam perception option + inline camera selection
+        cam_row.setSpacing(10)
+        self.radio_camera = QRadioButton("webcam", self)
         cam_row.addWidget(self.radio_camera)
+
+        cam_row.addSpacing(16)
+        self.cam_label = QLabel("camera:", self)
+        self.cam_combo = QComboBox(self)
+        self.cam_combo.setView(QListView())
+        self._populate_cameras()
+        self.cam_combo.setMinimumWidth(160)
+        self.cam_combo.setMaximumWidth(280)
+        self.cam_combo.currentIndexChanged.connect(self._on_cam_combo_changed)
+        cam_row.addWidget(self.cam_label)
+        cam_row.addWidget(self.cam_combo)
         cam_row.addStretch()
-        cam_row.addWidget(self.btn_cal_cam)
         src_layout.addLayout(cam_row)
 
         self.source_btn_group = QButtonGroup(self)
@@ -332,23 +321,7 @@ class SettingsDialog(QDialog):
         tag_vib_hdr.addWidget(self.tag_vib_combo, 1)
         tag_layout.addLayout(tag_vib_hdr)
 
-        self.tag_status_hint = QLabel(self)	# tag connection status
-        self.tag_status_hint.setWordWrap(True)
-        tag_layout.addWidget(self.tag_status_hint)
-
         layout.addWidget(self.tag_group)
-
-        self.cam_group = QGroupBox("camera input", self)	# camera selection
-        cam_layout = QVBoxLayout(self.cam_group)
-        cam_row = QHBoxLayout()
-        cam_label = QLabel("active camera:", self)
-        self.cam_combo = QComboBox(self)
-        self.cam_combo.setView(QListView())
-        self._populate_cameras()
-        cam_row.addWidget(cam_label)
-        cam_row.addWidget(self.cam_combo)
-        cam_layout.addLayout(cam_row)
-        layout.addWidget(self.cam_group)
 
         dim_group = QGroupBox("screen dimming && alerts", self)	# dimming settings
         dim_layout = QVBoxLayout(dim_group)
@@ -444,13 +417,13 @@ class SettingsDialog(QDialog):
 
         self.btn_apply = QPushButton("apply", self)
         self.btn_apply.clicked.connect(self.apply_settings)
-        btn_close = QPushButton("close", self)
-        btn_close.setStyleSheet("background-color: #27272A; color: white;")
-        btn_close.clicked.connect(self.reject)
+        self.btn_close = QPushButton("close", self)
+        self.btn_close.setStyleSheet("background-color: #27272A; color: white;")
+        self.btn_close.clicked.connect(self.reject)
 
         btn_layout.addWidget(self.btn_restore)
         btn_layout.addStretch()
-        btn_layout.addWidget(btn_close)
+        btn_layout.addWidget(self.btn_close)
         btn_layout.addWidget(self.btn_apply)
         layout.addLayout(btn_layout)
 
@@ -495,15 +468,17 @@ class SettingsDialog(QDialog):
             self.config.set("perception_source", new_source)
             self.settings_changed.emit({"perception_source": new_source})
 
+    def _on_cam_combo_changed(self, index):
+        if not self.radio_camera.isChecked():
+            self.radio_camera.setChecked(True)
+
     def _refresh_visibility(self):
         is_tag = self.radio_tag.isChecked()
         self.tag_group.setEnabled(is_tag)
-        self.cam_group.setEnabled(not is_tag)
+        self.cam_label.setEnabled(not is_tag)
+        self.cam_combo.setEnabled(not is_tag)
 
         if is_tag:
-            self.btn_cal_tag.setEnabled(self._is_tag_connected)
-            self.btn_cal_cam.setEnabled(False)
-
             self.tag_name_lbl.setEnabled(True)	# tag name always editable so we can change it for finding the tag
             self.tag_name_input.setEnabled(True)
 
@@ -516,25 +491,25 @@ class SettingsDialog(QDialog):
             if connected:
                 self.tag_thresh_val.setEnabled(True)
                 self.tag_thresh_val.setStyleSheet("color: #EF4444; font-weight: bold;")
-                bat_text = f" ({self._tag_battery_pct}%)" if getattr(self, '_tag_battery_pct', -1) >= 0 else ""
-                self.tag_status_hint.setText(f"tag connected{bat_text}")
-                self.tag_status_hint.setStyleSheet("color: #10B981; font-size: 11px;")
+                self.tag_status_hint.setText("tag connected")
+                self.tag_status_hint.setStyleSheet("color: #10B981; font-size: 12px; font-weight: 500;")
+                self.tag_status_hint.setVisible(True)
             else:
                 self.tag_thresh_val.setEnabled(False)
                 self.tag_thresh_val.setStyleSheet("color: #52525B; font-weight: bold;")
                 status_text = self._tag_status_override or "tag disconnected"
                 self.tag_status_hint.setText(status_text)
                 if self._tag_status_is_error or "off" in status_text or "error" in status_text or "unavailable" in status_text:
-                    self.tag_status_hint.setStyleSheet("color: #EF4444; font-size: 11px; font-weight: 500;")
+                    self.tag_status_hint.setStyleSheet("color: #EF4444; font-size: 12px; font-weight: 500;")
                 elif "connecting" in status_text or "scanning" in status_text:
-                    self.tag_status_hint.setStyleSheet("color: #F59E0B; font-size: 11px;")
+                    self.tag_status_hint.setStyleSheet("color: #F59E0B; font-size: 12px; font-weight: 500;")
                 else:
-                    self.tag_status_hint.setStyleSheet("color: #71717A; font-size: 11px; font-style: italic;")
+                    self.tag_status_hint.setStyleSheet("color: #71717A; font-size: 12px; font-style: italic;")
+                self.tag_status_hint.setVisible(True)
         else:
-            self.btn_cal_tag.setEnabled(False)
-            self.btn_cal_cam.setEnabled(True)
             self.tag_thresh_val.setStyleSheet("color: #52525B; font-weight: bold;")
             self.tag_status_hint.setText("")
+            self.tag_status_hint.setVisible(False)
 
     def _populate_cameras(self):
         self.cam_combo.clear()

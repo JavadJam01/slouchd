@@ -1,6 +1,7 @@
-from PySide6.QtCore import Qt, Signal, QRectF
-from PySide6.QtWidgets import QSystemTrayIcon, QMenu
-from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QAction, QActionGroup, QPainterPath
+import sys
+from PySide6.QtCore import Qt, Signal, QRectF, QPoint
+from PySide6.QtWidgets import QSystemTrayIcon, QMenu, QWidgetAction, QLabel, QWidget, QHBoxLayout
+from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QAction, QActionGroup, QPainterPath, QCursor, QGuiApplication
 
 from src.config import get_resource_path
 
@@ -96,6 +97,59 @@ def _init_icons():
         _ICON_GREEN = create_tray_icon("#22C55E", s_red)
         _ICON_BLUE = create_tray_icon("#38BDF8", s_red)
 
+def draw_battery_icon(pct: int, w: int = 22, h: int = 11) -> QPixmap:
+    scale = 2
+    pix = QPixmap(w * scale, h * scale)
+    pix.fill(Qt.GlobalColor.transparent)
+    pix.setDevicePixelRatio(scale)
+
+    painter = QPainter(pix)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+    if pct < 0:
+        border_color = QColor("#3F3F46")
+        bg_color = QColor("#141416")
+    else:
+        border_color = QColor("#71717A")
+        bg_color = QColor("#18181B")
+
+    if pct > 20:
+        fill_color = QColor("#10B981")
+    elif pct > 10:
+        fill_color = QColor("#F59E0B")
+    else:
+        fill_color = QColor("#EF4444")
+
+    body_w = w - 4.5
+    body_h = h - 1.0
+    body_path = QPainterPath()
+    body_path.addRoundedRect(QRectF(0.5, 0.5, body_w, body_h), 2.5, 2.5)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.fillPath(body_path, bg_color)
+    painter.strokePath(body_path, border_color)
+
+    nip_w = 2.0
+    nip_h = max(4.0, h * 0.44)
+    nip_y = (h - nip_h) / 2.0
+    nip_path = QPainterPath()
+    nip_path.addRoundedRect(QRectF(w - 3.2, nip_y, nip_w, nip_h), 0.8, 0.8)
+    painter.fillPath(nip_path, border_color)
+
+    if pct >= 0:
+        pct_clamped = max(0, min(100, pct))
+        pad_x = 2.5
+        pad_y = 2.5
+        inner_w = body_w - (pad_x * 2)
+        inner_h = body_h - (pad_y * 2)
+        fill_w = max(2.0, inner_w * (pct_clamped / 100.0)) if pct_clamped > 0 else 0.0
+        if fill_w > 0:
+            fill_path = QPainterPath()
+            fill_path.addRoundedRect(QRectF(pad_x + 0.5, pad_y + 0.5, fill_w, inner_h), 1.5, 1.5)
+            painter.fillPath(fill_path, fill_color)
+
+    painter.end()
+    return pix
+
 class SlouchdTrayIcon(QSystemTrayIcon):
     calibrate_requested = Signal()
     settings_requested = Signal()
@@ -110,50 +164,87 @@ class SlouchdTrayIcon(QSystemTrayIcon):
         self._current_state = None
         self.perception_source = "tag"
         self.tag_connected = False
-        self.battery_pct = 100
+        self.battery_pct = -1
+        self._tag_status_override = None
+        self._tag_status_is_error = False
         
-        self._apply_state("UNCALIBRATED")
-
         self.menu = QMenu()	# context menu
         self.menu.setStyleSheet("""
             QMenu {
-                background-color: #1F1F23;
                 background-color: #000000;
                 color: #E4E4E7;
                 border: 1px solid #27272A;
-                border-radius: 6px;
-                padding: 4px;
+                border-radius: 8px;
+                padding: 6px;
+                min-width: 250px;
             }
             QMenu::item {
-                padding: 6px 20px 6px 12px;
-                border-radius: 4px;
-                font-family: 'Segoe UI', sans-serif;
-                font-size: 13px;
+                padding: 10px 24px 10px 16px;
+                border-radius: 5px;
+                font-family: 'Segoe UI', -apple-system, sans-serif;
+                font-size: 14px;
+                margin: 1px 0px;
             }
             QMenu::item:selected {
                 background-color: #2D1517;
                 color: #FFFFFF;
             }
+            QMenu::item:disabled {
+                color: #71717A;
+                background-color: #000000;
+                padding: 8px 16px 4px 16px;
+                font-size: 12px;
+                font-weight: 600;
+                letter-spacing: 0.5px;
+            }
             QMenu::separator {
                 height: 1px;
                 background-color: #27272A;
-                margin: 4px 0px;
+                margin: 6px 4px;
+            }
+            QMenu::indicator {
+                width: 14px;
+                height: 14px;
+                margin-left: 6px;
             }
             QMenu::indicator:checked {
                 background-color: #DC2626;
                 border-radius: 2px;
             }
-            QMenu::right-arrow {
-                image: none;
-                border-top: 4px solid transparent;
-                border-bottom: 4px solid transparent;
-                border-left: 5px solid #A1A1AA;
-                margin-right: 6px;
-            }
-            QMenu::right-arrow:selected {
-                border-left-color: #EF4444;
-            }
         """)
+
+        self.header_widget = QWidget()
+        self.header_widget.setStyleSheet("background-color: transparent;")
+        header_layout = QHBoxLayout(self.header_widget)
+        header_layout.setContentsMargins(16, 8, 16, 4)
+        header_layout.setSpacing(8)
+
+        self.status_label = QLabel("starting...")
+        self.status_label.setStyleSheet("color: #F59E0B; font-size: 13px; font-weight: 600;")
+        header_layout.addWidget(self.status_label)
+
+        header_layout.addStretch()
+
+        self.bat_widget = QWidget()
+        self.bat_widget.setStyleSheet("background-color: transparent;")
+        bat_layout = QHBoxLayout(self.bat_widget)
+        bat_layout.setContentsMargins(0, 0, 0, 0)
+        bat_layout.setSpacing(5)
+
+        self.bat_icon = QLabel()
+        bat_layout.addWidget(self.bat_icon)
+
+        self.bat_text = QLabel("")
+        self.bat_text.setStyleSheet("color: #A1A1AA; font-size: 12px; font-weight: 500; font-family: 'Segoe UI', -apple-system, sans-serif;")
+        bat_layout.addWidget(self.bat_text)
+
+        header_layout.addWidget(self.bat_widget)
+        self.bat_widget.setVisible(False)
+
+        self.status_action = QWidgetAction(self.menu)
+        self.status_action.setDefaultWidget(self.header_widget)
+        self.menu.addAction(self.status_action)
+        self.menu.addSeparator()
 
         self.action_calibrate = self.menu.addAction("calibrate")
         self.action_calibrate.triggered.connect(self.calibrate_requested.emit)
@@ -188,7 +279,51 @@ class SlouchdTrayIcon(QSystemTrayIcon):
         self.action_exit = self.menu.addAction("quit slouchd")
         self.action_exit.triggered.connect(self.exit_requested.emit)
 
-        self.setContextMenu(self.menu)
+        self._apply_state("UNCALIBRATED")
+
+        # open menu on click
+        self.activated.connect(self._on_tray_activated)
+        if sys.platform != "win32":
+            self.setContextMenu(self.menu)
+
+    def _on_tray_activated(self, reason):
+        if reason in (
+            QSystemTrayIcon.ActivationReason.Trigger,
+            QSystemTrayIcon.ActivationReason.Context,
+            QSystemTrayIcon.ActivationReason.DoubleClick,
+        ):
+            self.show_menu()
+
+    def show_menu(self):
+        if self.menu.isVisible():
+            self.menu.close()
+            return
+
+        cursor_pos = QCursor.pos()
+        screen = QGuiApplication.screenAt(cursor_pos) or QGuiApplication.primaryScreen()
+        avail = screen.availableGeometry()
+
+        self.menu.adjustSize()
+        hint = self.menu.sizeHint()
+        menu_w = max(250, hint.width())
+        menu_h = hint.height()
+
+        # position above taskbar cursor
+        target_x = cursor_pos.x() - menu_w // 2
+        target_y = cursor_pos.y() - menu_h - 12
+
+        # shift left if near bottom-right watermark
+        watermark_zone_left = avail.right() - 320
+        watermark_zone_top = avail.bottom() - 120
+
+        if (target_x + menu_w > watermark_zone_left) and (cursor_pos.y() >= watermark_zone_top or target_y + menu_h > watermark_zone_top):
+            target_x = watermark_zone_left - menu_w - 20
+
+        # keep within screen bounds
+        final_x = max(avail.left() + 12, min(target_x, avail.right() - menu_w - 12))
+        final_y = max(avail.top() + 12, min(target_y, avail.bottom() - menu_h - 12))
+
+        self.menu.popup(QPoint(int(final_x), int(final_y)))
 
     def set_source(self, source: str):
         self.perception_source = source
@@ -200,36 +335,96 @@ class SlouchdTrayIcon(QSystemTrayIcon):
             self.action_source_camera.setChecked(True)
         self._refresh_tooltip()
 
+    def set_tag_status_text(self, status: str, is_error: bool = False):
+        self._tag_status_override = status.lower() if status else None
+        self._tag_status_is_error = is_error
+        self._refresh_tooltip()
+
     def set_tag_status(self, connected: bool, battery: int = -1):
         self.tag_connected = connected
         if battery >= 0:
             self.battery_pct = battery
-        if self.perception_source == "tag" and not connected:
+        elif not connected:
+            self.battery_pct = -1
+
+        if connected:
+            self._tag_status_override = None
+            self._tag_status_is_error = False
+        elif self.perception_source == "tag":
             self._apply_state("NO_USER")
         self._refresh_tooltip()
 
     def _refresh_tooltip(self):
         source_label = "tag" if self.perception_source == "tag" else "camera"
-        if self.perception_source == "tag":
-            conn_str = f"connected ({self.battery_pct}%)" if self.tag_connected else "searching for tag..."
-            tag_info = f"[{source_label}: {conn_str}]"
-        else:
-            tag_info = f"[{source_label}]"
 
         if self.is_paused:
-            state_str = "paused"
+            status_str = "paused"
+            status_color = "#F59E0B"
+            tag_conn = f"connected ({self.battery_pct}%)" if (self.tag_connected and self.battery_pct >= 0) else ("connected" if self.tag_connected else "disconnected")
+            tag_info = f"[{source_label}: {tag_conn}]" if self.perception_source == "tag" else f"[{source_label}]"
         elif self.perception_source == "tag" and not self.tag_connected:
-            state_str = "searching for tag..."
+            status_str = self._tag_status_override or "tag disconnected"
+            if self._tag_status_is_error or any(k in status_str for k in ("off", "error", "unavailable", "failed")):
+                status_color = "#EF4444"
+            elif any(k in status_str for k in ("connecting", "scanning", "searching", "retrying")):
+                status_color = "#F59E0B"
+            else:
+                status_color = "#71717A"
+            tag_info = f"[{source_label}: {status_str}]"
         else:
-            state_str = {
-                "UNCALIBRATED": "need for calibration",
-                "PAUSED": "paused",
-                "NO_USER": "no user",
-                "SLOUCHING": "slouching",
-                "GOOD": "good posture"
-            }.get(self._current_state, "ready")
+            tag_conn = f"connected ({self.battery_pct}%)" if self.battery_pct >= 0 else "connected"
+            tag_info = f"[{source_label}: {tag_conn}]" if self.perception_source == "tag" else f"[{source_label}]"
+            state_map = {
+                "UNCALIBRATED": ("need calibration", "#F59E0B"),
+                "PAUSED": ("paused", "#F59E0B"),
+                "NO_USER": ("no user", "#71717A"),
+                "SLOUCHING": ("slouching alert", "#EF4444"),
+                "GOOD": ("good posture", "#10B981")
+            }
+            status_str, status_color = state_map.get(self._current_state, ("ready", "#71717A"))
 
-        self.setToolTip(f"slouchd {tag_info} — {state_str}")
+        self.setToolTip(f"slouchd {tag_info} — {status_str}")
+        if hasattr(self, "status_label"):
+            self.status_label.setText(status_str)
+            self.status_label.setStyleSheet(
+                f"color: {status_color}; font-size: 13px; font-weight: 600;"
+            )
+
+        # battery display logic
+        if hasattr(self, "bat_widget"):
+            if self.perception_source != "tag":
+                # hide in webcam mode
+                self.bat_widget.setVisible(False)
+                self.action_source_tag.setText("wearable tag")
+            elif self.tag_connected and self.battery_pct >= 0:
+                self.bat_icon.setPixmap(draw_battery_icon(self.battery_pct, w=22, h=11))
+                self.bat_text.setText(f"{self.battery_pct}%")
+                self.bat_text.setVisible(True)
+                if self.battery_pct <= 10:
+                    self.bat_text.setStyleSheet("color: #EF4444; font-size: 12px; font-weight: 600; font-family: 'Segoe UI', -apple-system, sans-serif;")
+                elif self.battery_pct <= 20:
+                    self.bat_text.setStyleSheet("color: #F59E0B; font-size: 12px; font-weight: 600; font-family: 'Segoe UI', -apple-system, sans-serif;")
+                else:
+                    self.bat_text.setStyleSheet("color: #A1A1AA; font-size: 12px; font-weight: 500; font-family: 'Segoe UI', -apple-system, sans-serif;")
+                self.bat_widget.setToolTip(f"collar tag battery: {self.battery_pct}%")
+                self.bat_widget.setVisible(True)
+                self.action_source_tag.setText(f"wearable tag ({self.battery_pct}%)")
+            elif self.tag_connected:
+                # waiting for battery reading
+                self.bat_icon.setPixmap(draw_battery_icon(100, w=22, h=11))
+                self.bat_text.setText("")
+                self.bat_text.setVisible(False)
+                self.bat_widget.setToolTip("collar tag connected (reading battery...)")
+                self.bat_widget.setVisible(True)
+                self.action_source_tag.setText("wearable tag")
+            else:
+                # dimmed shell when disconnected
+                self.bat_icon.setPixmap(draw_battery_icon(-1, w=22, h=11))
+                self.bat_text.setText("")
+                self.bat_text.setVisible(False)
+                self.bat_widget.setToolTip("collar tag disconnected")
+                self.bat_widget.setVisible(True)
+                self.action_source_tag.setText("wearable tag")
 
     def _apply_state(self, state: str):
         self._current_state = state
