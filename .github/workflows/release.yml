@@ -55,29 +55,14 @@ jobs:
         shell: pwsh
         run: |
           choco install innosetup --no-progress
-          echo "C:\Program Files (x86)\Inno Setup 6" >> $env:GITHUB_PATH
+          "C:\Program Files (x86)\Inno Setup 6" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          "C:\Program Files\Inno Setup 6" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: sync version info
         shell: pwsh
         run: |
           cd slouchd-desktop
-          $ver = $env:APP_VERSION
-          $parts = $ver.Split('.')
-          $v0 = if ($parts.Length -gt 0) { [int]$parts[0] } else { 0 }
-          $v1 = if ($parts.Length -gt 1) { [int]$parts[1] } else { 0 }
-          $v2 = if ($parts.Length -gt 2) { [int]$parts[2] } else { 0 }
-          $v3 = if ($parts.Length -gt 3) { [int]$parts[3] } else { 0 }
-          $quadTuple = "($v0, $v1, $v2, $v3)"
-          $quadStr = "$v0.$v1.$v2.$v3"
-
-          $content = Get-Content version_info.txt -Raw
-          $content = $content -replace 'filevers=\(\d+,\s*\d+,\s*\d+,\s*\d+\)', "filevers=$quadTuple"
-          $content = $content -replace 'prodvers=\(\d+,\s*\d+,\s*\d+,\s*\d+\)', "prodvers=$quadTuple"
-          $content = $content -replace "StringStruct\('FileVersion',\s*'[^']+'\)", "StringStruct('FileVersion', '$quadStr')"
-          $content = $content -replace "StringStruct\('ProductVersion',\s*'[^']+'\)", "StringStruct('ProductVersion', '$quadStr')"
-          Set-Content version_info.txt $content -NoNewline
-
-          Set-Content src/__init__.py """""slouchd package."""`n`n__version__ = `"$ver`"`n"
+          python sync_version.py "$env:APP_VERSION"
 
       - name: build with pyinstaller
         shell: pwsh
@@ -89,7 +74,14 @@ jobs:
         shell: pwsh
         run: |
           cd slouchd-desktop
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion="${{ env.APP_VERSION }}" installer/slouchd.iss
+          $iscc = if (Test-Path "C:\Program Files (x86)\Inno Setup 6\ISCC.exe") {
+            "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          } elseif (Test-Path "C:\Program Files\Inno Setup 6\ISCC.exe") {
+            "C:\Program Files\Inno Setup 6\ISCC.exe"
+          } else {
+            "ISCC.exe"
+          }
+          & $iscc "/DMyAppVersion=$env:APP_VERSION" installer/slouchd.iss
 
       - name: generate checksums
         shell: pwsh

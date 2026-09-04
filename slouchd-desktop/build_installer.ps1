@@ -29,31 +29,7 @@ Write-Host "   building slouchd windows installer     " -ForegroundColor Cyan
 Write-Host "   version: $CleanVersion                 " -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
 
-# 2. synchronize version in version_info.txt and src/__init__.py
-$VersionInfoFile = Join-Path $ScriptDir "version_info.txt"
-if (Test-Path $VersionInfoFile) {
-    $parts = $CleanVersion.Split('.')
-    $v0 = if ($parts.Length -gt 0) { [int]$parts[0] } else { 0 }
-    $v1 = if ($parts.Length -gt 1) { [int]$parts[1] } else { 0 }
-    $v2 = if ($parts.Length -gt 2) { [int]$parts[2] } else { 0 }
-    $v3 = if ($parts.Length -gt 3) { [int]$parts[3] } else { 0 }
-    $QuadTuple = "($v0, $v1, $v2, $v3)"
-    $QuadStr = "$v0.$v1.$v2.$v3"
-
-    $viContent = Get-Content $VersionInfoFile -Raw
-    $viContent = $viContent -replace 'filevers=\(\d+,\s*\d+,\s*\d+,\s*\d+\)', "filevers=$QuadTuple"
-    $viContent = $viContent -replace 'prodvers=\(\d+,\s*\d+,\s*\d+,\s*\d+\)', "prodvers=$QuadTuple"
-    $viContent = $viContent -replace "StringStruct\('FileVersion',\s*'[^']+'\)", "StringStruct('FileVersion', '$QuadStr')"
-    $viContent = $viContent -replace "StringStruct\('ProductVersion',\s*'[^']+'\)", "StringStruct('ProductVersion', '$QuadStr')"
-    Set-Content $VersionInfoFile $viContent -NoNewline
-}
-
-$InitPy = Join-Path $ScriptDir "src\__init__.py"
-if (Test-Path $InitPy) {
-    Set-Content $InitPy """""slouchd package."""`n`n__version__ = `"$CleanVersion`"`n"
-}
-
-# 3. locate python in .venv, venv, or path
+# 2. locate python in .venv, venv, or path
 $PythonCandidates = @(
     (Join-Path $ScriptDir ".venv\Scripts\python.exe"),
     (Join-Path $ScriptDir "venv\Scripts\python.exe")
@@ -70,6 +46,12 @@ if (-not $Python) {
 }
 
 Write-Host "[1/3] using python: $Python" -ForegroundColor Green
+
+# 3. sync version across files
+$SyncScript = Join-Path $ScriptDir "sync_version.py"
+if (Test-Path $SyncScript) {
+    & $Python $SyncScript $CleanVersion
+}
 
 # 4. run pyinstaller
 Write-Host "[2/3] freezing app with pyinstaller..." -ForegroundColor Green
