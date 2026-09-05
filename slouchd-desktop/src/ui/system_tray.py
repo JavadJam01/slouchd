@@ -169,6 +169,7 @@ class SlouchdTrayIcon(QSystemTrayIcon):
         self._tag_status_is_error = False
         
         self.menu = QMenu()	# context menu
+        self.menu.setObjectName("tray_menu")
         self.menu.setStyleSheet("""
             QMenu {
                 background-color: #000000;
@@ -176,6 +177,8 @@ class SlouchdTrayIcon(QSystemTrayIcon):
                 border: 1px solid #27272A;
                 border-radius: 8px;
                 padding: 6px;
+            }
+            QMenu#tray_menu {
                 min-width: 250px;
             }
             QMenu::item {
@@ -250,6 +253,7 @@ class SlouchdTrayIcon(QSystemTrayIcon):
         self.action_calibrate.triggered.connect(self.calibrate_requested.emit)
 
         self.source_menu = self.menu.addMenu("source")	# source switcher submenu
+        self.source_menu.setObjectName("source_menu")
         self.source_group = QActionGroup(self)
         self.source_group.setExclusive(True)
 
