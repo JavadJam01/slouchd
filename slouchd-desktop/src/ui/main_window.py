@@ -1,5 +1,5 @@
 import sys
-from PySide6.QtCore import Qt, Signal, QByteArray, QUrl, QRectF, QSize, QPoint
+from PySide6.QtCore import Qt, Signal, QByteArray, QUrl, QRectF, QSize, QPoint, QEvent
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTabWidget, QScrollArea, QMenu
 )
@@ -328,11 +328,24 @@ class SlouchdWindow(QWidget):
     def _on_tab_changed(self, index: int):
         is_calibrate = (index == 0)
         is_camera = (self.config.get("perception_source", "tag") == "camera")
-        self.camera_preview_needed.emit(is_calibrate and is_camera and self.isVisible())
+        self.camera_preview_needed.emit(is_calibrate and is_camera and self.isVisible() and not self.isMinimized())
+
+    def hideEvent(self, event):
+        self.camera_preview_needed.emit(False)
+        super().hideEvent(event)
 
     def closeEvent(self, event):
         self.camera_preview_needed.emit(False)
         super().closeEvent(event)
+
+    def changeEvent(self, event):
+        if event.type() == QEvent.Type.WindowStateChange:
+            if self.isMinimized():
+                self.camera_preview_needed.emit(False)
+            elif self.isVisible() and self.tabs.currentIndex() == 0:
+                is_camera = (self.config.get("perception_source", "tag") == "camera")
+                self.camera_preview_needed.emit(is_camera)
+        super().changeEvent(event)
 
     def _update_battery_ui(self):
         # hide battery in webcam mode

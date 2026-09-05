@@ -436,12 +436,16 @@ class CalibrationDialog(QDialog):
         self.tag_calibrate_requested.emit()
         self.calibrated.emit({"source": "tag", "baseline_pitch": avg_pitch, "calibrated": True})
 
+        self.btn_calibrate.setEnabled(True)
+        self.btn_calibrate.setText("calibrate baseline")
+        self.visibility_bar.setValue(0)
+        self.meter_label.setText("tag calibration:")
+
         QMessageBox.information(
             self,
             "calibration complete",
             f"tag calibrated at {avg_pitch:.1f}° baseline."
         )
-        self.accept()
 
     def _finalize_camera_calibration(self):
         self._is_calibrating = False
@@ -464,9 +468,13 @@ class CalibrationDialog(QDialog):
 
         self.config.set("baseline", baseline_data)
         self.calibrated.emit(baseline_data)
+
+        self.btn_calibrate.setEnabled(True)
+        self.btn_calibrate.setText("calibrate baseline")
+        self.meter_label.setText("tracking quality:")
+
         QMessageBox.information(
             self,
             "calibration complete",
             "baseline posture calibrated successfully."
         )
-        self.accept()
