@@ -1,5 +1,5 @@
 import sys
-from PySide6.QtCore import Qt, QTimer, QRectF, Signal, QSize
+from PySide6.QtCore import Qt, QTimer, QRectF, Signal, QSize, QPointF
 from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QProgressBar
 from PySide6.QtGui import QGuiApplication, QPainter, QColor, QPen, QPainterPath, QPixmap, QIcon
 
@@ -174,15 +174,57 @@ def _render_pause_icon(color: QColor, size: int = 14) -> QPixmap:
     return pix
 
 
+def _render_speaker_icon(color: QColor, muted: bool, size: int = 14) -> QPixmap:
+    scale = 2
+    pix = QPixmap(size * scale, size * scale)
+    pix.fill(Qt.GlobalColor.transparent)
+    pix.setDevicePixelRatio(scale)
+    p = QPainter(pix)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
+    p.setBrush(color)
+    p.setPen(Qt.PenStyle.NoPen)
+
+    # speaker cone body
+    path = QPainterPath()
+    path.moveTo(1.5, 4.5)
+    path.lineTo(4.2, 4.5)
+    path.lineTo(7.2, 2.0)
+    path.lineTo(7.2, 12.0)
+    path.lineTo(4.2, 9.5)
+    path.lineTo(1.5, 9.5)
+    path.closeSubpath()
+    p.drawPath(path)
+
+    pen = QPen(color, 1.4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
+    p.setPen(pen)
+
+    if not muted:
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        # inner wave
+        p.drawArc(QRectF(5.5, 4.2, 5.6, 5.6), -45 * 16, 90 * 16)
+        # outer wave
+        p.drawArc(QRectF(4.0, 1.8, 10.4, 10.4), -40 * 16, 80 * 16)
+    else:
+        # mute x
+        p.drawLine(QPointF(9.5, 5.0), QPointF(13.0, 9.0))
+        p.drawLine(QPointF(13.0, 5.0), QPointF(9.5, 9.0))
+
+    p.end()
+    return pix
+
+
 class PositionPromptHUD(QWidget):
-    """hud prompt for posture recalibration and pause"""
+    """hud prompt for posture recalibration, pause, and mute"""
     recalibrate_requested = Signal()
     pause_requested = Signal()
-    WIDTH = 380
+    mute_toggled = Signal(bool)
+    WIDTH = 430
     HEIGHT = 54
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._muted = False
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.WindowStaysOnTopHint |
@@ -207,6 +249,30 @@ class PositionPromptHUD(QWidget):
         self.msg_lbl = QLabel("new sitting position?", self)
         self.msg_lbl.setStyleSheet("color: #18181B; font-size: 16px; font-weight: 700; font-family: 'Segoe UI', -apple-system, sans-serif;")
         layout.addWidget(self.msg_lbl, 1)
+
+        self.btn_mute = QPushButton(self)
+        self.btn_mute.setObjectName("btn_mute")
+        self.btn_mute.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_mute.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.btn_mute.setFixedSize(34, 34)
+        self.btn_mute.setStyleSheet("""
+            QPushButton#btn_mute {
+                background-color: #52525B;
+                border: 1px solid #3F3F46;
+                border-radius: 8px;
+            }
+            QPushButton#btn_mute:hover {
+                background-color: #71717A;
+                border: 1px solid #52525B;
+            }
+            QPushButton#btn_mute:pressed {
+                background-color: #3F3F46;
+                border: 1px solid #27272A;
+            }
+        """)
+        self.btn_mute.clicked.connect(self._on_mute_clicked)
+        self.set_muted(False)
+        layout.addWidget(self.btn_mute)
 
         self.btn_pause = QPushButton(self)
         self.btn_pause.setObjectName("btn_pause")
@@ -261,6 +327,18 @@ class PositionPromptHUD(QWidget):
         """)
         self.btn_recalib.clicked.connect(self._on_recalib_clicked)
         layout.addWidget(self.btn_recalib)
+
+    def set_muted(self, muted: bool):
+        self._muted = bool(muted)
+        icon_pix = _render_speaker_icon(QColor("#FAFAFA"), muted=self._muted, size=14)
+        self.btn_mute.setIcon(QIcon(icon_pix))
+        self.btn_mute.setIconSize(QSize(14, 14))
+        self.btn_mute.setToolTip("unmute sound alerts" if self._muted else "mute sound alerts")
+
+    def _on_mute_clicked(self):
+        new_muted = not getattr(self, "_muted", False)
+        self.set_muted(new_muted)
+        self.mute_toggled.emit(new_muted)
 
     def _on_pause_clicked(self):
         self.hide()

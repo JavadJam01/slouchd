@@ -58,8 +58,10 @@ class SlouchdApp:
         self._calib_cooldown_until = 0.0
         self._calib_hud = CalibrationHUD()
         self._prompt_hud = PositionPromptHUD()
+        self._prompt_hud.set_muted(not self.config.get("audio_alert", True))
         self._prompt_hud.recalibrate_requested.connect(self.trigger_shortcut_calibration)
         self._prompt_hud.pause_requested.connect(self._on_prompt_pause_requested)
+        self._prompt_hud.mute_toggled.connect(self._on_prompt_mute_toggled)
         self.dimmer.register_hud(self._prompt_hud)
         self.dimmer.register_hud(self._calib_hud)
 
@@ -471,6 +473,7 @@ class SlouchdApp:
         if len(self._alarm_history) >= alarm_count:
             # frequent alarms in short period
             self._sustained_timer.stop()
+            self._prompt_hud.set_muted(not self.config.get("audio_alert", True))
             self._prompt_hud.show_prompt("new sitting position?", theme="yellow", auto_hide_ms=0)
             self.dimmer._keep_huds_on_top()
         else:
@@ -484,6 +487,7 @@ class SlouchdApp:
 
     def _on_sustained_slouch(self):
         if self._was_slouching:
+            self._prompt_hud.set_muted(not self.config.get("audio_alert", True))
             self._prompt_hud.show_prompt("new sitting position?", theme="yellow", auto_hide_ms=0)
             self.dimmer._keep_huds_on_top()
 
@@ -502,6 +506,20 @@ class SlouchdApp:
             SlouchdTrayIcon.MessageIcon.Information,
             3000
         )
+
+    @Slot(bool)
+    def _on_prompt_mute_toggled(self, is_muted: bool):
+        is_audio = not is_muted
+        self.config.set("audio_alert", is_audio)
+        self.config.save()
+        if is_muted and sys.platform == "win32":
+            try:
+                import winsound
+                winsound.PlaySound(None, winsound.SND_PURGE)
+            except Exception:
+                pass
+        if hasattr(self.main_window, "settings_page") and hasattr(self.main_window.settings_page, "audio_check"):
+            self.main_window.settings_page.audio_check.setChecked(is_audio)
 
     @Slot()
     def trigger_shortcut_calibration(self):
@@ -606,6 +624,7 @@ class SlouchdApp:
         self._last_welcome_shown_time = now
         timeout_sec = float(self.config.get("welcome_back_hud_timeout_sec", 10.0))
         auto_hide_ms = max(0, int(timeout_sec * 1000))
+        self._prompt_hud.set_muted(not self.config.get("audio_alert", True))
         self._prompt_hud.show_prompt("welcome back. wanna?", theme="green", auto_hide_ms=auto_hide_ms)
         self.dimmer._keep_huds_on_top()
 
@@ -683,6 +702,9 @@ class SlouchdApp:
 
         if "audio_sound" in new_settings:
             self._init_audio()
+
+        if "audio_alert" in new_settings:
+            self._prompt_hud.set_muted(not bool(new_settings["audio_alert"]))
 
     @Slot(bool)
     def on_pause_toggled(self, is_paused):
