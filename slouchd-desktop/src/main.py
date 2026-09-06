@@ -16,11 +16,13 @@ from src.config import ConfigManager, get_resource_path
 from src.logging_config import setup_logging
 from src.startup import set_startup_enabled
 from src.audio import play_audio_file
+from src.hotkey import GlobalHotkey
 from src.camera.worker import CameraWorker
 from src.ble.worker import BleTagWorker
 from src.ui.overlay import MultiScreenDimmer
 from src.ui.system_tray import SlouchdTrayIcon
 from src.ui.main_window import SlouchdWindow
+from src.ui.calibration_hud import CalibrationHUD
 from src.ui.updater import PeriodicUpdateChecker
 
 class SlouchdApp:
@@ -50,6 +52,12 @@ class SlouchdApp:
         self.config = ConfigManager()
         self.dimmer = MultiScreenDimmer(self.config)
         self.tray = SlouchdTrayIcon()
+
+        self._calibrating = False
+        self._calib_samples = []
+        self._calib_hud = CalibrationHUD()
+        self.hotkey = GlobalHotkey()
+        self.hotkey.activated.connect(self.trigger_shortcut_calibration)
 
         self._was_slouching = False
         self._tag_slouch_start = 0.0
@@ -231,6 +239,15 @@ class SlouchdApp:
 
         self.main_window.update_tag_data(data)
 
+        if self._calibrating and self.config.get("perception_source", "tag") == "tag":
+            pitch = data.get("pitch")
+            if pitch is not None:
+                self._calib_samples.append(float(pitch))
+                pct = int((len(self._calib_samples) / 20.0) * 100)
+                self._calib_hud.show_progress(pct, "calibrating...")
+                if len(self._calib_samples) >= 20:
+                    self._finalize_shortcut_calibration()
+
         if self.config.get("perception_source", "tag") != "tag":
             return
 
@@ -276,6 +293,14 @@ class SlouchdApp:
 
         if qimg is not None:
             self.main_window.update_frame(qimg, metrics)
+
+        if self._calibrating and self.config.get("perception_source", "tag") == "camera":
+            if metrics and metrics.get("visibility", 0.0) >= 0.35 and "normalized_ear_shoulder" in metrics:
+                self._calib_samples.append(metrics)
+                pct = int((len(self._calib_samples) / 20.0) * 100)
+                self._calib_hud.show_progress(pct, "calibrating...")
+                if len(self._calib_samples) >= 20:
+                    self._finalize_shortcut_calibration()
 
         if self.tray.is_paused:
             self.dimmer.set_dimmed(False)
@@ -345,6 +370,51 @@ class SlouchdApp:
             self.tray.update_status(is_calibrated=False, is_slouching=False, user_present=False)
 
     @Slot()
+    def trigger_shortcut_calibration(self):
+        source = self.config.get("perception_source", "tag")
+        if source == "tag" and not self._tag_connected:
+            self._calib_hud.show_error("tag not connected")
+            return
+
+        self._calibrating = True
+        self._calib_samples.clear()
+        if source == "camera":
+            self.camera_worker.set_paused(False)
+            self.camera_worker.set_preview_mode(True)
+
+        self._calib_hud.show_progress(0, "calibrating posture...")
+
+    def _finalize_shortcut_calibration(self):
+        self._calibrating = False
+        source = self.config.get("perception_source", "tag")
+        if source == "tag":
+            avg_pitch = sum(self._calib_samples) / float(len(self._calib_samples))
+            self.config.set("tag_baseline_pitch", float(avg_pitch))
+            self.config.set("tag_calibrated", True)
+            self.ble_worker.calibrate()
+            self.tray.update_status(is_calibrated=True, is_slouching=False, user_present=bool(self._tag_connected))
+        else:
+            n = float(len(self._calib_samples))
+            baseline = {
+                "calibrated": True,
+                "ear_shoulder_dist": float(sum(s["ear_shoulder_dist"] for s in self._calib_samples) / n),
+                "nose_shoulder_dist": float(sum(s.get("nose_shoulder_dist", 0) for s in self._calib_samples) / n),
+                "normalized_ear_shoulder": float(sum(s["normalized_ear_shoulder"] for s in self._calib_samples) / n),
+                "shoulder_width": float(sum(s["shoulder_width"] for s in self._calib_samples) / n),
+                "inter_ear_dist": float(sum(s["inter_ear_dist"] for s in self._calib_samples) / n)
+            }
+            self.config.set("baseline", baseline)
+            is_calib_visible = bool(self.main_window.isVisible() and self.main_window.tabs.currentIndex() == 0)
+            if not is_calib_visible:
+                self.camera_worker.set_preview_mode(False)
+                self.camera_worker.set_paused(self.tray.is_paused)
+            self.tray.update_status(is_calibrated=True, is_slouching=False, user_present=True)
+
+        self._calib_hud.show_done("posture calibrated")
+        if self.config.get("audio_alert", True):
+            self.play_chime()
+
+    @Slot()
     def open_calibration(self):
         self.open_window("calibrate")
 
@@ -362,8 +432,12 @@ class SlouchdApp:
 
     def on_camera_preview_needed(self, needed: bool):
         if self.config.get("perception_source", "tag") == "camera":
-            self.camera_worker.set_preview_mode(needed)
-            self.camera_worker.set_paused(self.tray.is_paused if not needed else False)
+            if self._calibrating:
+                self.camera_worker.set_preview_mode(True)
+                self.camera_worker.set_paused(False)
+            else:
+                self.camera_worker.set_preview_mode(needed)
+                self.camera_worker.set_paused(self.tray.is_paused if not needed else False)
 
     @Slot(dict)
     def on_settings_changed(self, new_settings: dict):
@@ -394,6 +468,8 @@ class SlouchdApp:
             self.dimmer.set_dimmed(False)
 
     def exit_app(self):
+        self.hotkey.close()
+        self._calib_hud.close()
         self.dimmer.set_dimmed(False)
         self.tray.hide()
         self.ble_worker.stop()

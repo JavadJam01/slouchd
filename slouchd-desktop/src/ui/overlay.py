@@ -22,15 +22,20 @@ class SlouchBanner(QWidget):
         self._s_pixmap = QPixmap(str(s_path)) if s_path.exists() else None
 
         self.text = "LOUCH"
+        self.sub_text = "ctrl+alt+c for recalibration"
+        self.sub_font = QFont("Segoe UI", 16, QFont.Weight.DemiBold)
+        self.sub_font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 2)
         self._recalculate_size()
 
     def _recalculate_size(self):
         fm = QFontMetrics(self.font)
+        sub_fm = QFontMetrics(self.sub_font)
         self.cap_height = fm.capHeight()
         self.text_width = fm.horizontalAdvance(self.text)
+        self.sub_text_width = sub_fm.horizontalAdvance(self.sub_text)
 
         if self._s_pixmap and not self._s_pixmap.isNull():
-            # S is 1.8 of font cap heigh
+            # scale logo height to font
             self.s_height = int(self.cap_height * 1.8)
             sw, sh = self._s_pixmap.width(), self._s_pixmap.height()
             self.s_width = int(self.s_height * (sw / sh)) if sh > 0 else int(self.s_height * 0.56)
@@ -42,8 +47,11 @@ class SlouchBanner(QWidget):
             self.text = "SLOUCH"
             self.text_width = fm.horizontalAdvance(self.text)
 
-        total_w = self.s_width + self.gap + self.text_width + 24
-        total_h = max(self.s_height, fm.height()) + 30
+        main_w = self.s_width + self.gap + self.text_width
+        total_w = max(main_w, self.sub_text_width) + 24
+        main_h = max(self.s_height, fm.height())
+        self.sub_height = sub_fm.height()
+        total_h = main_h + 12 + self.sub_height + 30
         self.setFixedSize(total_w, total_h)
 
     def paintEvent(self, event):
@@ -51,14 +59,18 @@ class SlouchBanner(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
 
-        start_x = 12
-        mid_y = self.height() // 2
-        baseline_y = mid_y + self.cap_height // 2
+        fm = QFontMetrics(self.font)
+        main_h = max(self.s_height, fm.height())
+        main_mid_y = 15 + main_h // 2
+        baseline_y = main_mid_y + self.cap_height // 2
         color = QColor(239, 68, 68, 120)
 
+        main_w = self.s_width + self.gap + self.text_width
+        start_x = (self.width() - main_w) // 2
+
         if self._s_pixmap and not self._s_pixmap.isNull():
-            # Vertically center the larger S with the text
-            s_top = mid_y - self.s_height // 2
+            # vertically center logo with text
+            s_top = main_mid_y - self.s_height // 2
             scaled_s = self._s_pixmap.scaled(
                 self.s_width, self.s_height,
                 Qt.AspectRatioMode.KeepAspectRatio,
@@ -74,6 +86,13 @@ class SlouchBanner(QWidget):
         painter.setFont(self.font)
         painter.setPen(color)
         painter.drawText(text_x, baseline_y, self.text)
+
+        # recalibration hint text
+        sub_y = 15 + main_h + 10
+        sub_rect = QRect(0, sub_y, self.width(), self.sub_height)
+        painter.setFont(self.sub_font)
+        painter.setPen(QColor("#FFFFFF"))
+        painter.drawText(sub_rect, Qt.AlignmentFlag.AlignCenter, self.sub_text)
         painter.end()
 
 class MultiScreenDimmer(QWidget):
