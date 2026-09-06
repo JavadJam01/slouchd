@@ -8,6 +8,7 @@
 #define MyAppPublisher "Javad Jam (slouchd)"
 #define MyAppURL "https://github.com/JavadJam01/slouchd"
 #define MyAppExeName "slouchd.exe"
+#define MyAppSetupMutex "slouchd_A386D672_setup_mutex"
 
 [Setup]
 AppId={{A386D672-8C84-4822-9214-E4B7CA81B43F}
@@ -33,9 +34,13 @@ WizardStyle=modern
 ArchitecturesInstallIn64BitMode=x64compatible
 CloseApplications=yes
 RestartApplications=no
+SetupMutex={#MyAppSetupMutex},Global\{#MyAppSetupMutex}
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
+
+[Messages]
+SetupAppRunningError=Another instance of {#MyAppName} Setup is already running.%n%nPlease complete or close the existing installation before running Setup again.
 
 [Files]
 Source: "..\dist\slouchd\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -60,12 +65,36 @@ Filename: "{app}\{#MyAppExeName}"; Flags: nowait; Check: WizardSilent
 Type: files; Name: "{app}\*.log"
 
 [Code]
+function ShowWindow(hWnd: HWND; uCmdShow: Integer): Boolean;
+external 'ShowWindow@user32.dll stdcall';
+
+function SetForegroundWindow(hWnd: HWND): Boolean;
+external 'SetForegroundWindow@user32.dll stdcall';
+
 // close running slouchd when setup starts
 function InitializeSetup(): Boolean;
 var
   ResultCode: Integer;
+  Wnd: HWND;
 begin
   Result := True;
+
+  // prevent multiple installer instances from running concurrently
+  if CheckForMutexes('{#MyAppSetupMutex},Global\{#MyAppSetupMutex}') then
+  begin
+    Wnd := FindWindowByClassName('TWizardForm');
+    if Wnd <> 0 then
+    begin
+      ShowWindow(Wnd, 9); // SW_RESTORE
+      SetForegroundWindow(Wnd);
+    end;
+    SuppressibleMsgBox('Another instance of ' + '{#MyAppName}' + ' Setup is already running.' + #13#10#13#10 +
+      'Please complete or close the existing installation window before continuing.',
+      mbInformation, MB_OK, MB_OK);
+    Result := False;
+    Exit;
+  end;
+
   // stop running slouchd process
   Exec('taskkill.exe', '/F /T /IM {#MyAppExeName}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   // wait for file handles to release
@@ -90,6 +119,17 @@ var
   ResultCode: Integer;
 begin
   Result := True;
+
+  // prevent uninstall while setup is currently installing
+  if CheckForMutexes('{#MyAppSetupMutex},Global\{#MyAppSetupMutex}') then
+  begin
+    SuppressibleMsgBox('Setup is currently running for ' + '{#MyAppName}' + '.' + #13#10#13#10 +
+      'Please complete or close the setup wizard before uninstalling.',
+      mbError, MB_OK, MB_OK);
+    Result := False;
+    Exit;
+  end;
+
   Exec('taskkill.exe', '/F /T /IM {#MyAppExeName}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Sleep(400);
 end;
