@@ -1,7 +1,7 @@
 import sys
 from PySide6.QtCore import Qt, Signal, QRectF, QPoint, QTimer
 from PySide6.QtWidgets import QSystemTrayIcon, QMenu, QWidgetAction, QLabel, QWidget, QHBoxLayout
-from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QAction, QActionGroup, QPainterPath, QCursor, QGuiApplication
+from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QAction, QActionGroup, QPainterPath, QCursor, QGuiApplication, QFont
 
 from src.config import get_resource_path
 
@@ -209,6 +209,25 @@ def promote_tray_icon_windows(target_exe_path: str | None = None) -> bool:
     except Exception:
         return False
 
+class _TrayMenu(QMenu):
+    """tray menu with shortcut label"""
+    def __init__(self, tray_icon=None, parent=None):
+        super().__init__(parent)
+        self._tray_icon = tray_icon
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self._tray_icon and hasattr(self._tray_icon, "action_calibrate"):
+            p = QPainter(self)
+            is_hovered = (self.activeAction() == self._tray_icon.action_calibrate)
+            p.setPen(QColor("#A1A1AA") if is_hovered else QColor("#71717A"))
+            p.setFont(QFont("Segoe UI", 9, QFont.Weight.Normal))
+            r = self.actionGeometry(self._tray_icon.action_calibrate).adjusted(0, 0, -24, 0)
+            p.drawText(r, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, "ctrl+alt+c")
+            p.end()
+
+
+
 class SlouchdTrayIcon(QSystemTrayIcon):
     calibrate_requested = Signal()
     settings_requested = Signal()
@@ -228,7 +247,7 @@ class SlouchdTrayIcon(QSystemTrayIcon):
         self._tag_status_is_error = False
         self._promotion_scheduled = False
         
-        self.menu = QMenu()	# context menu
+        self.menu = _TrayMenu(tray_icon=self)	# context menu
         self.menu.setObjectName("tray_menu")
         self.menu.setStyleSheet("""
             QMenu {

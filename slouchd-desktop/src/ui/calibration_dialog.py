@@ -4,6 +4,7 @@ from PySide6.QtWidgets import (
     QProgressBar, QMessageBox, QWidget, QFrame
 )
 from PySide6.QtGui import QPixmap, QFont, QPainter, QColor, QPen, QBrush
+from src.ui.calibration_hud import CalibrationHUD
 
 class TagPostureMeter(QWidget):
     """tilt gauge widget for tag"""
@@ -78,15 +79,6 @@ class TagPostureMeter(QWidget):
         painter.setPen(QColor("#FFFFFF"))
         painter.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
         painter.drawText(self.width() - 140, 16, 120, 24, Qt.AlignmentFlag.AlignCenter, badge_text)
-
-        if self.battery >= 0:	# battery badge
-            bat_color = QColor("#10B981") if self.battery > 20 else (QColor("#F59E0B") if self.battery > 10 else QColor("#EF4444"))
-            painter.setBrush(QColor("#27272A"))
-            painter.setPen(QPen(bat_color, 1))
-            painter.drawRoundedRect(self.width() - 230, 16, 80, 24, 12, 12)
-            painter.setPen(QColor("#E4E4E7"))
-            painter.setFont(QFont("Segoe UI", 9, QFont.Weight.DemiBold))
-            painter.drawText(self.width() - 230, 16, 80, 24, Qt.AlignmentFlag.AlignCenter, f"{self.battery}% bat")
 
         meter_w = 400	# pitch meter bar
         meter_h = 16
@@ -198,13 +190,22 @@ class CalibrationDialog(QDialog):
         layout.setSpacing(14)
         layout.setContentsMargins(24, 24, 24, 24)
 
+        title_layout = QHBoxLayout()
         self.title = QLabel("posture calibration", self)
         self.title.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
         self.title.setStyleSheet("color: #FAFAFA;")
-        layout.addWidget(self.title)
+        title_layout.addWidget(self.title)
+
+        title_layout.addStretch()
+
+        self.shortcut_badge = QLabel("shortcut: ctrl + alt + c", self)
+        self.shortcut_badge.setStyleSheet("color: #71717A; font-size: 12px;")
+        title_layout.addWidget(self.shortcut_badge)
+        layout.addLayout(title_layout)
 
         self.desc = QLabel(self)
         self.desc.setWordWrap(True)
+        self.desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.desc.setStyleSheet("color: #A1A1AA; font-size: 13px; line-height: 1.4;")
         layout.addWidget(self.desc)
 
@@ -222,34 +223,17 @@ class CalibrationDialog(QDialog):
         self.preview_label.setText("connecting to video stream...")
         layout.addWidget(self.preview_label)
 
-        meter_layout = QHBoxLayout()	# progress bar
-        self.meter_label = QLabel("tracking status:", self)
-        self.meter_label.setStyleSheet("font-size: 12px; font-weight: 500;")
-        
-        self.visibility_bar = QProgressBar(self)
-        self.visibility_bar.setRange(0, 100)
-        self.visibility_bar.setValue(0)
-        self.visibility_bar.setFixedHeight(8)
-        self.visibility_bar.setTextVisible(False)
-        self.visibility_bar.setStyleSheet("""
-            QProgressBar {
-                background-color: #27272A;
-                border-radius: 4px;
-            }
-            QProgressBar::chunk {
-                background-color: #10B981;
-                border-radius: 4px;
-            }
-        """)
-        meter_layout.addWidget(self.meter_label)
-        meter_layout.addWidget(self.visibility_bar)
-        layout.addLayout(meter_layout)
+        self.progress_card = CalibrationHUD(self, is_window=False)
+        self.progress_card.hide()
+        self.calib_bar = self.progress_card.bar
+        self.calib_status_lbl = self.progress_card.status_lbl
 
-        btn_layout = QHBoxLayout()	# action buttons
-        self.btn_calibrate = QPushButton("calibrate baseline", self)
-        self.btn_calibrate.clicked.connect(self.start_calibration)
-        
+        btn_layout = QHBoxLayout()	# action buttons and progress hud
+        btn_layout.setContentsMargins(0, 0, 0, 0)
+        btn_layout.setSpacing(0)
+
         self.btn_close = QPushButton("cancel", self)
+        self.btn_close.setFixedSize(90, 38)
         self.btn_close.setStyleSheet("""
             QPushButton {
                 background-color: #27272A;
@@ -260,10 +244,46 @@ class CalibrationDialog(QDialog):
             }
         """)
         self.btn_close.clicked.connect(self.reject)
+        self.btn_close.setVisible(False)
+
+        self.btn_calibrate = QPushButton("calibrate baseline", self)
+        self.btn_calibrate.setFixedSize(290, 52)
+        self.btn_calibrate.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_calibrate.setStyleSheet("""
+            QPushButton {
+                background-color: #09090B;
+                color: #FAFAFA;
+                font-family: 'Segoe UI', -apple-system, sans-serif;
+                font-size: 13px;
+                font-weight: 600;
+                border: 1.5px solid #3F3F46;
+                border-radius: 12px;
+            }
+            QPushButton:hover {
+                background-color: #18181B;
+                border: 1.5px solid #52525B;
+                color: #FFFFFF;
+            }
+            QPushButton:pressed {
+                background-color: #27272A;
+                border: 1.5px solid #10B981;
+            }
+            QPushButton:disabled {
+                background-color: #09090B;
+                border: 1.5px solid #27272A;
+                color: #71717A;
+            }
+        """)
+        self.btn_calibrate.clicked.connect(self.start_calibration)
+        self.progress_card.closed.connect(self.btn_calibrate.show)
 
         btn_layout.addStretch()
-        btn_layout.addWidget(self.btn_close)
+        btn_layout.addWidget(self.progress_card)
         btn_layout.addWidget(self.btn_calibrate)
+        btn_layout.addStretch()
+        btn_layout.addWidget(self.btn_close)
+
+        layout.addSpacing(28)
         layout.addLayout(btn_layout)
 
         self._apply_mode()
@@ -273,9 +293,7 @@ class CalibrationDialog(QDialog):
             self.tag_meter.set_status_message(text)
 
     def set_tag_battery(self, battery_pct: int):
-        if hasattr(self, 'tag_meter'):
-            self.tag_meter.battery = battery_pct
-            self.tag_meter.update()
+        pass
 
     def set_camera_error(self, err_msg: str):
         if self.perception_source == "camera":
@@ -289,8 +307,11 @@ class CalibrationDialog(QDialog):
                 font-size: 13px;
                 font-weight: 500;
             """)
-            self.visibility_bar.setValue(0)
-            self.meter_label.setText("camera error")
+            if self._is_calibrating:
+                self._is_calibrating = False
+                self.btn_calibrate.setEnabled(True)
+                self.btn_calibrate.setText("calibrate baseline")
+                self.progress_card.show_error("camera error")
 
     def set_source(self, source: str):
         self.perception_source = source
@@ -298,7 +319,8 @@ class CalibrationDialog(QDialog):
         self._samples.clear()
         self.btn_calibrate.setText("calibrate baseline")
         self.btn_calibrate.setEnabled(True)
-        self.visibility_bar.setValue(0)
+        self.btn_calibrate.show()
+        self.progress_card.hide()
         self.latest_metrics = None
         if source == "camera":
             self.preview_label.setText("connecting to video stream...")
@@ -317,10 +339,9 @@ class CalibrationDialog(QDialog):
             self.tag_meter.show()
             self.preview_label.hide()
             self.desc.setText(
-                "clip the tag to your shirt collar.\n"
-                "sit up straight, then click calibrate baseline."
+                "clip the tag to your shirt collar\n"
+                "sit up straight, then click calibrate baseline"
             )
-            self.meter_label.setText("tag calibration:")
         else:
             self.tag_meter.hide()
             self.preview_label.show()
@@ -328,7 +349,6 @@ class CalibrationDialog(QDialog):
                 "sit upright facing the camera.\n"
                 "ensure head and shoulders are visible, then click calibrate baseline."
             )
-            self.meter_label.setText("tracking quality:")
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -337,7 +357,8 @@ class CalibrationDialog(QDialog):
         self._samples.clear()
         self.btn_calibrate.setText("calibrate baseline")
         self.btn_calibrate.setEnabled(True)
-        self.visibility_bar.setValue(0)
+        self.btn_calibrate.show()
+        self.progress_card.hide()
         self.latest_metrics = None
         if self.perception_source == "camera":
             self.preview_label.setText("connecting to video stream...")
@@ -356,8 +377,7 @@ class CalibrationDialog(QDialog):
             if self._is_calibrating:
                 self._samples.append(data.get("pitch", 0.0))
                 progress = int((len(self._samples) / float(self._target_samples)) * 100)
-                self.visibility_bar.setValue(progress)
-                self.meter_label.setText(f"calibrating: {progress}% (hold still...)")
+                self.progress_card.show_progress(progress, "calibrating posture...")
 
                 if len(self._samples) >= self._target_samples:
                     self._finalize_tag_calibration()
@@ -379,19 +399,12 @@ class CalibrationDialog(QDialog):
                 Qt.TransformationMode.SmoothTransformation
             )
             self.preview_label.setPixmap(scaled_pixmap)
-            if not self._is_calibrating:
-                self.meter_label.setText("tracking quality:")
 
-        visibility = int(metrics.get("visibility", 0.0) * 100)
-        
-        if not self._is_calibrating:
-            self.visibility_bar.setValue(visibility)
-        else:
+        if self._is_calibrating:
             if metrics and metrics.get("visibility", 0.0) >= 0.35 and "normalized_ear_shoulder" in metrics:
                 self._samples.append(metrics)
                 progress = int((len(self._samples) / float(self._target_samples)) * 100)
-                self.visibility_bar.setValue(progress)
-                self.meter_label.setText(f"calibrating: {progress}% (hold still...)")
+                self.progress_card.show_progress(progress, "calibrating posture...")
 
                 if len(self._samples) >= self._target_samples:
                     self._finalize_camera_calibration()
@@ -407,10 +420,8 @@ class CalibrationDialog(QDialog):
                 return
             self._is_calibrating = True
             self._samples.clear()
-            self.btn_calibrate.setEnabled(False)
-            self.btn_calibrate.setText("sampling posture...")
-            self.visibility_bar.setValue(0)
-            self.meter_label.setText("calibrating: 0% (hold still...)")
+            self.btn_calibrate.hide()
+            self.progress_card.show_progress(0, "hold upright posture...")
         else:
             if not self.latest_metrics or self.latest_metrics.get("visibility", 0) < 0.35:
                 QMessageBox.warning(
@@ -422,10 +433,8 @@ class CalibrationDialog(QDialog):
 
             self._is_calibrating = True
             self._samples.clear()
-            self.btn_calibrate.setEnabled(False)
-            self.btn_calibrate.setText("sampling posture...")
-            self.visibility_bar.setValue(0)
-            self.meter_label.setText("calibrating: 0% (hold still...)")
+            self.btn_calibrate.hide()
+            self.progress_card.show_progress(0, "hold upright posture...")
 
     def _finalize_tag_calibration(self):
         self._is_calibrating = False
@@ -438,14 +447,7 @@ class CalibrationDialog(QDialog):
 
         self.btn_calibrate.setEnabled(True)
         self.btn_calibrate.setText("calibrate baseline")
-        self.visibility_bar.setValue(0)
-        self.meter_label.setText("tag calibration:")
-
-        QMessageBox.information(
-            self,
-            "calibration complete",
-            f"tag calibrated at {avg_pitch:.1f}° baseline."
-        )
+        self.progress_card.show_done("posture calibrated")
 
     def _finalize_camera_calibration(self):
         self._is_calibrating = False
@@ -471,10 +473,4 @@ class CalibrationDialog(QDialog):
 
         self.btn_calibrate.setEnabled(True)
         self.btn_calibrate.setText("calibrate baseline")
-        self.meter_label.setText("tracking quality:")
-
-        QMessageBox.information(
-            self,
-            "calibration complete",
-            "baseline posture calibrated successfully."
-        )
+        self.progress_card.show_done("posture calibrated")
