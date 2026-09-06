@@ -55,9 +55,11 @@ class SlouchdApp:
 
         self._calibrating = False
         self._calib_samples = []
+        self._calib_cooldown_until = 0.0
         self._calib_hud = CalibrationHUD()
         self._prompt_hud = PositionPromptHUD()
         self._prompt_hud.recalibrate_requested.connect(self.trigger_shortcut_calibration)
+        self._prompt_hud.pause_requested.connect(self._on_prompt_pause_requested)
         self.dimmer.register_hud(self._prompt_hud)
         self.dimmer.register_hud(self._calib_hud)
 
@@ -75,6 +77,19 @@ class SlouchdApp:
         self._latest_tag_data = None
         self._camera_error_notified = False
         self._init_audio()	# init audio
+
+        # presence and welcome back tracking
+        self._last_user_active_time = time.time()
+        self._last_presence_tick = time.time()
+        self._user_was_away = False
+        self._last_welcome_shown_time = 0.0
+        self._startup_welcome_pending = True
+        self._camera_away_start = 0.0
+        self._tag_disconnect_time = 0.0
+
+        self._presence_timer = QTimer(self.app)
+        self._presence_timer.timeout.connect(self._check_user_presence)
+        self._presence_timer.start(1000)
 
         self.ble_worker = BleTagWorker(self.config)	# workers setup
         self.camera_worker = CameraWorker(self.config)
@@ -158,6 +173,7 @@ class SlouchdApp:
             self._handle_slouch_ended()
         self._was_slouching = False
         self._tag_slouch_start = 0.0
+        self._camera_away_start = 0.0
 
         if not self.camera_worker.isRunning():
             self.camera_worker.start()
@@ -202,7 +218,23 @@ class SlouchdApp:
                 SlouchdTrayIcon.MessageIcon.Information,
                 3000
             )
+            if self._tag_disconnect_time > 0.0:
+                away_duration = time.time() - self._tag_disconnect_time
+                self._tag_disconnect_time = 0.0
+                away_threshold = float(self.config.get("welcome_back_away_sec", 120.0))
+                if away_duration >= away_threshold:
+                    self._show_welcome_back()
         else:
+            if self._tag_disconnect_time == 0.0:
+                self._tag_disconnect_time = time.time()
+            if self._calibrating:
+                self._calibrating = False
+                self._calib_hud.show_error("tag disconnected")
+            self.dimmer.set_dimmed(False)
+            if self._was_slouching:
+                self._handle_slouch_ended()
+            self._was_slouching = False
+            self._tag_slouch_start = 0.0
             self.tray.update_status(is_calibrated=False, is_slouching=False, user_present=False)
             if prev_connected:
                 self.tray.showMessage(
@@ -251,6 +283,10 @@ class SlouchdApp:
 
         self.main_window.update_tag_data(data)
 
+        if self._startup_welcome_pending and self.config.get("perception_source", "tag") == "tag":
+            self._startup_welcome_pending = False
+            self._show_welcome_back()
+
         if self._calibrating and self.config.get("perception_source", "tag") == "tag":
             pitch = data.get("pitch")
             if pitch is not None:
@@ -259,14 +295,17 @@ class SlouchdApp:
                 self._calib_hud.show_progress(pct, "calibrating...")
                 if len(self._calib_samples) >= 20:
                     self._finalize_shortcut_calibration()
+            return
 
         if self.config.get("perception_source", "tag") != "tag":
             return
 
-        if self.tray.is_paused:
+        if self.tray.is_paused or self._calibrating or (time.time() < self._calib_cooldown_until):
             self.dimmer.set_dimmed(False)
             if self._was_slouching:
                 self._handle_slouch_ended()
+            self._was_slouching = False
+            self._tag_slouch_start = 0.0
             return
 
         is_calibrated = bool(data.get("calibrated", False) or self.config.get("tag_calibrated", False))
@@ -292,13 +331,15 @@ class SlouchdApp:
             self._tag_slouch_start = 0.0
             confirmed_slouch = False
 
-        if confirmed_slouch and not self._was_slouching:
-            if self.config.get("audio_alert", True):
-                self.play_chime()
+        if confirmed_slouch:
+            if not self._was_slouching:
+                if self.config.get("audio_alert", True):
+                    self.play_chime()
+                self._handle_slouch_started()
             self.dimmer.set_dimmed(True)
-            self._handle_slouch_started()
-        elif not confirmed_slouch and self._was_slouching:
-            self._handle_slouch_ended()
+        else:
+            if self._was_slouching:
+                self._handle_slouch_ended()
             self.dimmer.set_dimmed(False)
 
         self._was_slouching = confirmed_slouch
@@ -321,16 +362,34 @@ class SlouchdApp:
                 self._calib_hud.show_progress(pct, "calibrating...")
                 if len(self._calib_samples) >= 20:
                     self._finalize_shortcut_calibration()
+            return
 
-        if self.tray.is_paused:
+        if self.tray.is_paused or self._calibrating or (time.time() < self._calib_cooldown_until):
             self.dimmer.set_dimmed(False)
             if self._was_slouching:
                 self._handle_slouch_ended()
+            self._was_slouching = False
             return
 
         baseline = self.config.get("baseline", {})
         is_calibrated = bool(baseline.get("calibrated", False))
         user_present = bool(metrics and metrics.get("visibility", 0.0) >= 0.25)
+        now = time.time()
+
+        if user_present:
+            if self._startup_welcome_pending:
+                self._startup_welcome_pending = False
+                self._show_welcome_back()
+            elif self._camera_away_start > 0.0:
+                away_duration = now - self._camera_away_start
+                self._camera_away_start = 0.0
+                away_threshold = float(self.config.get("welcome_back_away_sec", 120.0))
+                if away_duration >= away_threshold:
+                    self._show_welcome_back()
+            self._last_user_active_time = now
+        else:
+            if self._camera_away_start == 0.0:
+                self._camera_away_start = now
 
         if not is_calibrated or not user_present:
             self.dimmer.set_dimmed(False)
@@ -340,13 +399,15 @@ class SlouchdApp:
             self.tray.update_status(is_calibrated=is_calibrated, is_slouching=False, user_present=user_present)
             return
 
-        if is_slouching and not self._was_slouching:
-            if self.config.get("audio_alert", True):
-                self.play_chime()
+        if is_slouching:
+            if not self._was_slouching:
+                if self.config.get("audio_alert", True):
+                    self.play_chime()
+                self._handle_slouch_started()
             self.dimmer.set_dimmed(True)
-            self._handle_slouch_started()
-        elif not is_slouching and self._was_slouching:
-            self._handle_slouch_ended()
+        else:
+            if self._was_slouching:
+                self._handle_slouch_ended()
             self.dimmer.set_dimmed(False)
 
         self._was_slouching = is_slouching
@@ -410,7 +471,7 @@ class SlouchdApp:
         if len(self._alarm_history) >= alarm_count:
             # frequent alarms in short period
             self._sustained_timer.stop()
-            self._prompt_hud.show_prompt()
+            self._prompt_hud.show_prompt("new sitting position?", theme="yellow", auto_hide_ms=0)
             self.dimmer._keep_huds_on_top()
         else:
             # check if slouch is held for sustained duration
@@ -418,12 +479,29 @@ class SlouchdApp:
 
     def _handle_slouch_ended(self):
         self._sustained_timer.stop()
-        self._prompt_hud.hide()
+        if self._prompt_hud.msg_lbl.text() == "new sitting position?":
+            self._prompt_hud.hide()
 
     def _on_sustained_slouch(self):
         if self._was_slouching:
-            self._prompt_hud.show_prompt()
+            self._prompt_hud.show_prompt("new sitting position?", theme="yellow", auto_hide_ms=0)
             self.dimmer._keep_huds_on_top()
+
+    @Slot()
+    def _on_prompt_pause_requested(self):
+        self._alarm_history.clear()
+        self._sustained_timer.stop()
+        self._prompt_hud.hide()
+        self.dimmer.set_dimmed(False)
+        self._was_slouching = False
+        self._tag_slouch_start = 0.0
+        self.tray.set_paused(True)
+        self.tray.showMessage(
+            "slouchd paused",
+            "monitoring paused. click the tray icon to resume.",
+            SlouchdTrayIcon.MessageIcon.Information,
+            3000
+        )
 
     @Slot()
     def trigger_shortcut_calibration(self):
@@ -433,6 +511,9 @@ class SlouchdApp:
         self.dimmer.set_dimmed(False)
         self._was_slouching = False
         self._tag_slouch_start = 0.0
+        self._last_welcome_shown_time = time.time()
+        self._startup_welcome_pending = False
+        self._user_was_away = False
 
         source = self.config.get("perception_source", "tag")
         if source == "tag" and not self._tag_connected:
@@ -454,6 +535,11 @@ class SlouchdApp:
         self._prompt_hud.hide()
         self._was_slouching = False
         self._tag_slouch_start = 0.0
+        self.dimmer.set_dimmed(False)
+        self._calib_cooldown_until = time.time() + 1.2
+        self._last_welcome_shown_time = time.time()
+        self._startup_welcome_pending = False
+        self._user_was_away = False
         source = self.config.get("perception_source", "tag")
         if source == "tag":
             avg_pitch = sum(self._calib_samples) / float(len(self._calib_samples))
@@ -479,8 +565,84 @@ class SlouchdApp:
             self.tray.update_status(is_calibrated=True, is_slouching=False, user_present=True)
 
         self._calib_hud.show_done("posture calibrated")
-        if self.config.get("audio_alert", True):
-            self.play_chime()
+
+    def _is_calibrated(self) -> bool:
+        source = self.config.get("perception_source", "tag")
+        if source == "tag":
+            return bool(self.config.get("tag_calibrated", False))
+        else:
+            baseline = self.config.get("baseline", {})
+            return bool(baseline.get("calibrated", False))
+
+    def _get_windows_idle_seconds(self) -> float:
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                from ctypes import Structure, c_uint, sizeof, byref
+                class LASTINPUTINFO(Structure):
+                    _fields_ = [('cbSize', c_uint), ('dwTime', c_uint)]
+                lii = LASTINPUTINFO()
+                lii.cbSize = sizeof(LASTINPUTINFO)
+                if ctypes.windll.user32.GetLastInputInfo(byref(lii)):
+                    millis = ctypes.windll.kernel32.GetTickCount() - lii.dwTime
+                    return max(0.0, float(millis) / 1000.0)
+            except Exception:
+                pass
+        return 0.0
+
+    def _show_welcome_back(self):
+        if not self._is_calibrated():
+            return
+        if self._calibrating:
+            return
+        now = time.time()
+        cooldown_sec = float(self.config.get("welcome_back_cooldown_sec", 30.0))
+        away_threshold = float(self.config.get("welcome_back_away_sec", 120.0))
+        effective_cooldown = min(cooldown_sec, away_threshold)
+        if (now - self._last_welcome_shown_time) < effective_cooldown:
+            return
+        if self._was_slouching:
+            return
+        self._last_welcome_shown_time = now
+        timeout_sec = float(self.config.get("welcome_back_hud_timeout_sec", 10.0))
+        auto_hide_ms = max(0, int(timeout_sec * 1000))
+        self._prompt_hud.show_prompt("welcome back. wanna?", theme="green", auto_hide_ms=auto_hide_ms)
+        self.dimmer._keep_huds_on_top()
+
+    def _check_user_presence(self):
+        now = time.time()
+        away_threshold = float(self.config.get("welcome_back_away_sec", 120.0))
+
+        # detect sleep resume or timer gap
+        tick_gap = now - self._last_presence_tick
+        self._last_presence_tick = now
+        if tick_gap >= away_threshold:
+            self._user_was_away = True
+
+        # check startup welcome pending
+        if self._startup_welcome_pending:
+            source = self.config.get("perception_source", "tag")
+            if source == "tag":
+                if self._tag_connected and self._latest_tag_data is not None:
+                    self._startup_welcome_pending = False
+                    self._show_welcome_back()
+                    return
+            else:
+                idle = self._get_windows_idle_seconds()
+                if idle < 4.0 and (now - self._last_user_active_time) > 2.5:
+                    self._startup_welcome_pending = False
+                    self._show_welcome_back()
+                    return
+
+        # check windows user input idle
+        idle_sec = self._get_windows_idle_seconds()
+        if idle_sec >= away_threshold:
+            self._user_was_away = True
+        elif idle_sec < 4.0:
+            if self._user_was_away:
+                self._user_was_away = False
+                self._show_welcome_back()
+            self._last_user_active_time = now
 
     @Slot()
     def open_calibration(self):
@@ -538,6 +700,8 @@ class SlouchdApp:
                 self._handle_slouch_ended()
 
     def exit_app(self):
+        if hasattr(self, "_presence_timer"):
+            self._presence_timer.stop()
         self.hotkey.close()
         self._calib_hud.close()
         self._prompt_hud.close()

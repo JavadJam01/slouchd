@@ -229,9 +229,10 @@ class UpdateDialog(QDialog):
         self.btn_secondary.setObjectName("btn_secondary")
         self.btn_secondary.clicked.connect(self.reject)
 
+        self._primary_action = "accept"
         self.btn_primary = QPushButton("ok", self)
         self.btn_primary.setVisible(False)
-        self.btn_primary.clicked.connect(self.accept)
+        self.btn_primary.clicked.connect(self._on_primary_clicked)
 
         self.button_layout.addWidget(self.btn_secondary)
         self.button_layout.addWidget(self.btn_primary)
@@ -245,16 +246,23 @@ class UpdateDialog(QDialog):
             self.worker.check_finished.connect(self.on_check_finished)
             self.worker.start()
 
+    def _on_primary_clicked(self):
+        if self._primary_action == "download":
+            self._download_update()
+        elif self._primary_action == "releases":
+            self._open_releases()
+        else:
+            self.accept()
+
     def on_check_finished(self, res: dict):
         if res.get("status") == "error":
             self.status_headline.setText("unable to check for updates")
             self.status_headline.setStyleSheet("color: #EF4444; border: none; background: transparent;")
             self.status_detail.setText("could not reach github. check your network connection.")
             self.btn_secondary.setText("close")
+            self._primary_action = "releases"
             self.btn_primary.setText("open releases")
             self.btn_primary.setVisible(True)
-            self.btn_primary.clicked.disconnect()
-            self.btn_primary.clicked.connect(self._open_releases)
             return
 
         self.download_url = res.get("download_url", self.download_url)
@@ -268,19 +276,17 @@ class UpdateDialog(QDialog):
                 "a new version is available. download the installer to update slouchd."
             )
             self.btn_secondary.setText("later")
+            self._primary_action = "download"
             self.btn_primary.setText("download installer")
             self.btn_primary.setVisible(True)
-            self.btn_primary.clicked.disconnect()
-            self.btn_primary.clicked.connect(self._download_update)
         else:
             self.status_headline.setText("you're up to date")
             self.status_headline.setStyleSheet("color: #F4F4F5; font-weight: bold; border: none; background: transparent;")
             self.status_detail.setText(f"slouchd v{self.current_version} is currently the newest version.")
             self.btn_secondary.setVisible(False)
+            self._primary_action = "accept"
             self.btn_primary.setText("ok")
             self.btn_primary.setVisible(True)
-            self.btn_primary.clicked.disconnect()
-            self.btn_primary.clicked.connect(self.accept)
 
     def _download_update(self):
         QDesktopServices.openUrl(QUrl(self.download_url))
@@ -291,7 +297,7 @@ class UpdateDialog(QDialog):
         self.accept()
 
     def done(self, r):
-        if hasattr(self, "worker") and self.worker.isRunning():
+        if getattr(self, "worker", None) is not None and self.worker.isRunning():
             self.worker.quit()
             self.worker.wait(1000)
         super().done(r)

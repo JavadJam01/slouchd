@@ -1,7 +1,7 @@
 import sys
-from PySide6.QtCore import Qt, QTimer, QRectF, Signal
-from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QProgressBar
-from PySide6.QtGui import QGuiApplication, QPainter, QColor, QPen, QPainterPath
+from PySide6.QtCore import Qt, QTimer, QRectF, Signal, QSize
+from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QProgressBar
+from PySide6.QtGui import QGuiApplication, QPainter, QColor, QPen, QPainterPath, QPixmap, QIcon
 
 class CalibrationHUD(QWidget):
     """calibration progress hud"""
@@ -153,10 +153,32 @@ class CalibrationHUD(QWidget):
         painter.end()
 
 
+def _render_pause_icon(color: QColor, size: int = 14) -> QPixmap:
+    scale = 2
+    pix = QPixmap(size * scale, size * scale)
+    pix.fill(Qt.GlobalColor.transparent)
+    pix.setDevicePixelRatio(scale)
+    p = QPainter(pix)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    p.setBrush(color)
+    p.setPen(Qt.PenStyle.NoPen)
+    bar_w = 3.2
+    bar_h = 10.0
+    gap = 2.8
+    x1 = (size - (2 * bar_w + gap)) / 2.0
+    x2 = x1 + bar_w + gap
+    y = (size - bar_h) / 2.0
+    p.drawRoundedRect(QRectF(x1, y, bar_w, bar_h), 1.2, 1.2)
+    p.drawRoundedRect(QRectF(x2, y, bar_w, bar_h), 1.2, 1.2)
+    p.end()
+    return pix
+
+
 class PositionPromptHUD(QWidget):
-    """hud prompting user when position change or frequent alarms detected"""
+    """hud prompt for posture recalibration and pause"""
     recalibrate_requested = Signal()
-    WIDTH = 350
+    pause_requested = Signal()
+    WIDTH = 380
     HEIGHT = 54
 
     def __init__(self, parent=None):
@@ -174,14 +196,44 @@ class PositionPromptHUD(QWidget):
         self._bg_color = QColor("#FACC15")
         self._border_color = QColor("#CA8A04")
 
-        from PySide6.QtWidgets import QHBoxLayout, QPushButton
+        self._auto_hide_timer = QTimer(self)
+        self._auto_hide_timer.setSingleShot(True)
+        self._auto_hide_timer.timeout.connect(self.hide)
+
         layout = QHBoxLayout(self)
         layout.setContentsMargins(18, 8, 14, 8)
-        layout.setSpacing(12)
+        layout.setSpacing(8)
 
         self.msg_lbl = QLabel("new sitting position?", self)
-        self.msg_lbl.setStyleSheet("color: #18181B; font-size: 17px; font-weight: 700; font-family: 'Segoe UI', -apple-system, sans-serif;")
+        self.msg_lbl.setStyleSheet("color: #18181B; font-size: 16px; font-weight: 700; font-family: 'Segoe UI', -apple-system, sans-serif;")
         layout.addWidget(self.msg_lbl, 1)
+
+        self.btn_pause = QPushButton(self)
+        self.btn_pause.setObjectName("btn_pause")
+        self.btn_pause.setToolTip("pause monitoring")
+        self.btn_pause.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_pause.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.btn_pause.setFixedSize(34, 34)
+        pause_pix = _render_pause_icon(QColor("#FAFAFA"), 14)
+        self.btn_pause.setIcon(QIcon(pause_pix))
+        self.btn_pause.setIconSize(QSize(14, 14))
+        self.btn_pause.setStyleSheet("""
+            QPushButton#btn_pause {
+                background-color: #52525B;
+                border: 1px solid #3F3F46;
+                border-radius: 8px;
+            }
+            QPushButton#btn_pause:hover {
+                background-color: #71717A;
+                border: 1px solid #52525B;
+            }
+            QPushButton#btn_pause:pressed {
+                background-color: #3F3F46;
+                border: 1px solid #27272A;
+            }
+        """)
+        self.btn_pause.clicked.connect(self._on_pause_clicked)
+        layout.addWidget(self.btn_pause)
 
         self.btn_recalib = QPushButton("recalibrate", self)
         self.btn_recalib.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -191,7 +243,7 @@ class PositionPromptHUD(QWidget):
                 background-color: #18181B;
                 color: #FAFAFA;
                 font-family: 'Segoe UI', -apple-system, sans-serif;
-                font-size: 15px;
+                font-size: 14px;
                 font-weight: 700;
                 padding: 6px 16px;
                 border: 1px solid #27272A;
@@ -207,8 +259,16 @@ class PositionPromptHUD(QWidget):
                 border: 1px solid #000000;
             }
         """)
-        self.btn_recalib.clicked.connect(self.recalibrate_requested)
+        self.btn_recalib.clicked.connect(self._on_recalib_clicked)
         layout.addWidget(self.btn_recalib)
+
+    def _on_pause_clicked(self):
+        self.hide()
+        self.pause_requested.emit()
+
+    def _on_recalib_clicked(self):
+        self.hide()
+        self.recalibrate_requested.emit()
 
     def _reposition(self):
         screen = QGuiApplication.primaryScreen()
@@ -228,10 +288,27 @@ class PositionPromptHUD(QWidget):
             except Exception:
                 pass
 
-    def show_prompt(self):
+    def hide(self):
+        if hasattr(self, "_auto_hide_timer"):
+            self._auto_hide_timer.stop()
+        super().hide()
+
+    def show_prompt(self, message: str = "new sitting position?", theme: str = "yellow", auto_hide_ms: int = 0):
+        if hasattr(self, "_auto_hide_timer"):
+            self._auto_hide_timer.stop()
+        self.msg_lbl.setText(message)
+        if theme == "green":
+            self._bg_color = QColor("#10B981")
+            self._border_color = QColor("#059669")
+        else:
+            self._bg_color = QColor("#FACC15")
+            self._border_color = QColor("#CA8A04")
         self._reposition()
+        self.update()
         self.show()
         self.bring_to_front()
+        if auto_hide_ms > 0 and hasattr(self, "_auto_hide_timer"):
+            self._auto_hide_timer.start(auto_hide_ms)
 
     def paintEvent(self, event):
         painter = QPainter(self)

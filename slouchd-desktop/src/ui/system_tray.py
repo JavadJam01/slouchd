@@ -547,6 +547,11 @@ class SlouchdTrayIcon(QSystemTrayIcon):
 
         self._refresh_tooltip()
 
+    def set_paused(self, paused: bool):
+        if self.is_paused == paused:
+            return
+        self._toggle_pause()
+
     def _toggle_pause(self):
         self.is_paused = not self.is_paused
         if self.is_paused:

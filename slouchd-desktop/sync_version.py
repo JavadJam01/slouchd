@@ -44,7 +44,20 @@ def sync_version(version_str: str):
     init_path = os.path.join(base_dir, "src", "__init__.py")
     if os.path.exists(init_path):
         with open(init_path, "w", encoding="utf-8") as f:
-            f.write(f'"""slouchd package."""\n\n__version__ = "{ver}"\n')
+            f.write(f'"""slouchd package"""\n\n__version__ = "{ver}"\n')
+
+    # update inno setup script default version
+    iss_path = os.path.join(base_dir, "installer", "slouchd.iss")
+    if os.path.exists(iss_path):
+        with open(iss_path, "r", encoding="utf-8") as f:
+            iss_content = f.read()
+        iss_content = re.sub(
+            r'(#define\s+MyAppVersion\s+)"[^"]+"',
+            rf'\g<1>"{ver}"',
+            iss_content,
+        )
+        with open(iss_path, "w", encoding="utf-8") as f:
+            f.write(iss_content)
 
     print(f"version synced to {ver} ({quad_str})")
 

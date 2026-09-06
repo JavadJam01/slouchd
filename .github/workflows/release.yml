@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'release tag name (e.g. v0.1.0)'
+        description: 'release tag name (e.g. v0.2.0)'
         required: false
-        default: 'v0.1.0'
+        default: 'v0.2.0'
 
 permissions:
   contents: write
@@ -30,7 +30,7 @@ jobs:
             $tag = $env:GITHUB_REF -replace "refs/tags/", ""
           } else {
             $tag = "${{ github.event.inputs.tag_name }}"
-            if (-not $tag) { $tag = "v0.1.0" }
+            if (-not $tag) { $tag = "v0.2.0" }
           }
           $ver = $tag.TrimStart('v')
           "RELEASE_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append

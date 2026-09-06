@@ -44,6 +44,9 @@ DEFAULT_CONFIG = {
     "position_prompt_alarm_count": 3,	# alarms required to trigger prompt
     "position_prompt_window_sec": 35.0,	# window in seconds for alarm count
     "position_prompt_sustained_sec": 3.2,	# sustained slouch seconds before prompt
+    "welcome_back_away_sec": 15.0,	# seconds user is away before triggering welcome back prompt
+    "welcome_back_hud_timeout_sec": 4.3,	# seconds welcome back hud stays visible before auto hiding
+    "welcome_back_cooldown_sec": 30.0,	# cooldown in seconds between welcome prompts
     "baseline": {
         "calibrated": False,
         "ear_shoulder_dist": 0.0,
@@ -54,7 +57,7 @@ DEFAULT_CONFIG = {
 }
 
 def get_app_dir() -> Path:
-    """returns app data directory."""
+    """returns app data directory"""
     candidates = []
     if os.name == "nt" and "LOCALAPPDATA" in os.environ:
         candidates.append(Path(os.environ["LOCALAPPDATA"]) / "slouchd")
@@ -78,6 +81,29 @@ def get_app_dir() -> Path:
 
     return Path(tempfile.gettempdir()) / "slouchd"
 
+# non gui settings fetched from config.py
+NON_GUI_KEYS = {
+    "welcome_back_away_sec",
+    "welcome_back_hud_timeout_sec",
+    "welcome_back_cooldown_sec",
+    "position_prompt_alarm_count",
+    "position_prompt_window_sec",
+    "position_prompt_sustained_sec",
+    "check_interval_sec",
+    "sensitivity",
+    "frequent_alarms_threshold",
+    "frequent_alarms_window_sec",
+    "frequent_alarms_cooldown_sec",
+    "away_grace_sec",
+    "away_threshold_sec",
+    "circuit_breaker_enabled",
+    "circuit_breaker_max_alarms",
+    "circuit_breaker_window_sec",
+    "circuit_breaker_snooze_sec",
+    "recalibration_suggestion",
+    "dim_fade_ms",
+}
+
 class ConfigManager:
     def __init__(self):
         self._lock = threading.RLock()
@@ -88,28 +114,36 @@ class ConfigManager:
 
     def load(self):
         with self._lock:
+            # start with default config
+            self._data = DEFAULT_CONFIG.copy()
             if self.config_path.exists():
                 try:
                     with open(self.config_path, "r", encoding="utf-8") as f:
                         saved = json.load(f)
-                        self._data.update(saved)
-                        # sync position prompt metrics from default_config
-                        for k in ("position_prompt_alarm_count", "position_prompt_window_sec", "position_prompt_sustained_sec"):
-                            if k in DEFAULT_CONFIG:
-                                self._data[k] = DEFAULT_CONFIG[k]
+                        # only load gui settings from disk
+                        for k, v in saved.items():
+                            if k not in NON_GUI_KEYS:
+                                self._data[k] = v
                 except Exception as e:
                     print(f"error loading config, using default: {e}")
+            else:
+                self.save()
 
     def save(self):
         with self._lock:
             try:
+                # only save gui settings to disk
+                to_save = {k: v for k, v in self._data.items() if k not in NON_GUI_KEYS}
                 with open(self.config_path, "w", encoding="utf-8") as f:
-                    json.dump(self._data, f, indent=2)
+                    json.dump(to_save, f, indent=2)
             except Exception as e:
                 print(f"error saving config: {e}")
 
     def get(self, key, default=None):
         with self._lock:
+            # non gui settings come from default config
+            if key in NON_GUI_KEYS and key in DEFAULT_CONFIG:
+                return DEFAULT_CONFIG[key]
             return self._data.get(key, default)
 
     def set(self, key, value):
@@ -121,3 +155,4 @@ class ConfigManager:
         with self._lock:
             self._data.update(new_dict)
             self.save()
+
