@@ -44,9 +44,9 @@ DEFAULT_CONFIG = {
     "position_prompt_alarm_count": 3,	# alarms required to trigger prompt
     "position_prompt_window_sec": 35.0,	# window in seconds for alarm count
     "position_prompt_sustained_sec": 3.2,	# sustained slouch seconds before prompt
-    "welcome_back_away_sec": 15.0,	# seconds user is away before triggering welcome back prompt
-    "welcome_back_hud_timeout_sec": 4.3,	# seconds welcome back hud stays visible before auto hiding
-    "welcome_back_cooldown_sec": 30.0,	# cooldown in seconds between welcome prompts
+    "welcome_back_away_sec": 120.0,	# seconds user is away before triggering welcome back prompt
+    "welcome_back_hud_timeout_sec": 8.0,	# seconds welcome back hud stays visible before auto hiding
+    "welcome_back_cooldown_sec": 60.0,	# cooldown in seconds between welcome prompts
     "baseline": {
         "calibrated": False,
         "ear_shoulder_dist": 0.0,

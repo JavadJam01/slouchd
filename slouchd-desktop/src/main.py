@@ -5,6 +5,7 @@ import signal
 import threading
 import tempfile
 import wave
+from collections import deque
 from PySide6.QtCore import Qt, Slot, QTimer
 from PySide6.QtWidgets import QApplication, QMessageBox
 from PySide6.QtGui import QIcon
@@ -87,7 +88,10 @@ class SlouchdApp:
         self._last_welcome_shown_time = 0.0
         self._startup_welcome_pending = True
         self._camera_away_start = 0.0
+        self._camera_user_present = False
         self._tag_disconnect_time = 0.0
+        self._locked_since = 0.0
+        self._recent_tag_pitches = deque(maxlen=40)
 
         self._presence_timer = QTimer(self.app)
         self._presence_timer.timeout.connect(self._check_user_presence)
@@ -176,6 +180,9 @@ class SlouchdApp:
         self._was_slouching = False
         self._tag_slouch_start = 0.0
         self._camera_away_start = 0.0
+        self._tag_disconnect_time = 0.0
+        if source == "tag":
+            self._camera_user_present = False
 
         if not self.camera_worker.isRunning():
             self.camera_worker.start()
@@ -223,10 +230,11 @@ class SlouchdApp:
             if self._tag_disconnect_time > 0.0:
                 away_duration = time.time() - self._tag_disconnect_time
                 self._tag_disconnect_time = 0.0
-                away_threshold = float(self.config.get("welcome_back_away_sec", 120.0))
+                away_threshold = max(60.0, float(self.config.get("welcome_back_away_sec", 120.0)))
                 if away_duration >= away_threshold:
                     self._show_welcome_back()
         else:
+            self._recent_tag_pitches.clear()
             if self._tag_disconnect_time == 0.0:
                 self._tag_disconnect_time = time.time()
             if self._calibrating:
@@ -285,9 +293,19 @@ class SlouchdApp:
 
         self.main_window.update_tag_data(data)
 
+        pitch = data.get("pitch")
+        if pitch is not None:
+            self._recent_tag_pitches.append((time.time(), float(pitch)))
+
         if self._startup_welcome_pending and self.config.get("perception_source", "tag") == "tag":
             self._startup_welcome_pending = False
-            self._show_welcome_back()
+            if not self.tray.is_paused:
+                self._show_welcome_back()
+
+        if self._user_was_away and self.config.get("perception_source", "tag") == "tag":
+            if self._is_tag_worn() and not self.tray.is_paused:
+                self._user_was_away = False
+                self._show_welcome_back()
 
         if self._calibrating and self.config.get("perception_source", "tag") == "tag":
             pitch = data.get("pitch")
@@ -376,17 +394,23 @@ class SlouchdApp:
         baseline = self.config.get("baseline", {})
         is_calibrated = bool(baseline.get("calibrated", False))
         user_present = bool(metrics and metrics.get("visibility", 0.0) >= 0.25)
+        self._camera_user_present = user_present
         now = time.time()
 
         if user_present:
             if self._startup_welcome_pending:
                 self._startup_welcome_pending = False
-                self._show_welcome_back()
+                if not self.tray.is_paused:
+                    self._show_welcome_back()
             elif self._camera_away_start > 0.0:
                 away_duration = now - self._camera_away_start
                 self._camera_away_start = 0.0
-                away_threshold = float(self.config.get("welcome_back_away_sec", 120.0))
+                away_threshold = max(60.0, float(self.config.get("welcome_back_away_sec", 120.0)))
                 if away_duration >= away_threshold:
+                    self._show_welcome_back()
+            elif self._user_was_away:
+                self._user_was_away = False
+                if not self.tray.is_paused:
                     self._show_welcome_back()
             self._last_user_active_time = now
         else:
@@ -447,6 +471,7 @@ class SlouchdApp:
 
     @Slot(str)
     def on_camera_error(self, err_msg):
+        self._camera_user_present = False
         self.main_window.set_camera_error(err_msg)
         if self.config.get("perception_source", "tag") == "camera":
             if not self._camera_error_notified:
@@ -486,6 +511,8 @@ class SlouchdApp:
             self._prompt_hud.hide()
 
     def _on_sustained_slouch(self):
+        if self.tray.is_paused:
+            return
         if self._was_slouching:
             self._prompt_hud.set_muted(not self.config.get("audio_alert", True))
             self._prompt_hud.show_prompt("new sitting position?", theme="yellow", auto_hide_ms=0)
@@ -499,6 +526,11 @@ class SlouchdApp:
         self.dimmer.set_dimmed(False)
         self._was_slouching = False
         self._tag_slouch_start = 0.0
+        self._user_was_away = False
+        self._camera_away_start = 0.0
+        self._tag_disconnect_time = 0.0
+        self._locked_since = 0.0
+        self._startup_welcome_pending = False
         self.tray.set_paused(True)
         self.tray.showMessage(
             "slouchd paused",
@@ -592,6 +624,42 @@ class SlouchdApp:
             baseline = self.config.get("baseline", {})
             return bool(baseline.get("calibrated", False))
 
+    def _is_workstation_locked(self) -> bool:
+        """check if windows session is locked"""
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                desk = ctypes.windll.user32.OpenInputDesktop(0, False, 0x0001)
+                if desk == 0:
+                    return True
+                ctypes.windll.user32.CloseDesktop(desk)
+            except Exception:
+                pass
+        return False
+
+    def _is_screensaver_active(self) -> bool:
+        """check if screensaver is active"""
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                is_active = ctypes.c_int(0)
+                if ctypes.windll.user32.SystemParametersInfoW(0x0072, 0, ctypes.byref(is_active), 0):
+                    return bool(is_active.value)
+            except Exception:
+                pass
+        return False
+
+    def _is_tag_worn(self) -> bool:
+        """check if tag has body motion from breathing"""
+        if not self._tag_connected or not self._recent_tag_pitches:
+            return False
+        now = time.time()
+        recent = [p for t, p in self._recent_tag_pitches if (now - t) <= 15.0]
+        if len(recent) < 5:
+            return True
+        variance = max(recent) - min(recent)
+        return variance >= 0.15
+
     def _get_windows_idle_seconds(self) -> float:
         if sys.platform == "win32":
             try:
@@ -609,20 +677,29 @@ class SlouchdApp:
         return 0.0
 
     def _show_welcome_back(self):
+        if self.tray.is_paused:
+            return
         if not self._is_calibrated():
             return
         if self._calibrating:
             return
-        now = time.time()
-        cooldown_sec = float(self.config.get("welcome_back_cooldown_sec", 30.0))
-        away_threshold = float(self.config.get("welcome_back_away_sec", 120.0))
-        effective_cooldown = min(cooldown_sec, away_threshold)
-        if (now - self._last_welcome_shown_time) < effective_cooldown:
-            return
         if self._was_slouching:
             return
+
+        source = self.config.get("perception_source", "tag")
+        if source == "tag" and not self._tag_connected:
+            return
+        if source == "camera" and not getattr(self, "_camera_user_present", False):
+            return
+
+        now = time.time()
+        cooldown_sec = float(self.config.get("welcome_back_cooldown_sec", 60.0))
+        effective_cooldown = max(30.0, cooldown_sec)
+        if (now - self._last_welcome_shown_time) < effective_cooldown:
+            return
+
         self._last_welcome_shown_time = now
-        timeout_sec = float(self.config.get("welcome_back_hud_timeout_sec", 10.0))
+        timeout_sec = float(self.config.get("welcome_back_hud_timeout_sec", 8.0))
         auto_hide_ms = max(0, int(timeout_sec * 1000))
         self._prompt_hud.set_muted(not self.config.get("audio_alert", True))
         self._prompt_hud.show_prompt("welcome back. wanna?", theme="green", auto_hide_ms=auto_hide_ms)
@@ -630,13 +707,33 @@ class SlouchdApp:
 
     def _check_user_presence(self):
         now = time.time()
-        away_threshold = float(self.config.get("welcome_back_away_sec", 120.0))
+        if self.tray.is_paused:
+            self._user_was_away = False
+            self._startup_welcome_pending = False
+            self._locked_since = 0.0
+            self._last_presence_tick = now
+            self._last_user_active_time = now
+            return
 
-        # detect sleep resume or timer gap
+        away_threshold = max(60.0, float(self.config.get("welcome_back_away_sec", 120.0)))
+
+        # check sleep resume or timer gap
         tick_gap = now - self._last_presence_tick
         self._last_presence_tick = now
         if tick_gap >= away_threshold:
             self._user_was_away = True
+
+        # check lock screen or screensaver
+        is_locked = self._is_workstation_locked() or self._is_screensaver_active()
+        if is_locked:
+            if self._locked_since == 0.0:
+                self._locked_since = now
+            return
+        elif self._locked_since > 0.0:
+            locked_duration = now - self._locked_since
+            self._locked_since = 0.0
+            if locked_duration >= away_threshold:
+                self._user_was_away = True
 
         # check startup welcome pending
         if self._startup_welcome_pending:
@@ -647,21 +744,30 @@ class SlouchdApp:
                     self._show_welcome_back()
                     return
             else:
-                idle = self._get_windows_idle_seconds()
-                if idle < 4.0 and (now - self._last_user_active_time) > 2.5:
+                if getattr(self, "_camera_user_present", False):
                     self._startup_welcome_pending = False
                     self._show_welcome_back()
                     return
 
-        # check windows user input idle
-        idle_sec = self._get_windows_idle_seconds()
-        if idle_sec >= away_threshold:
-            self._user_was_away = True
-        elif idle_sec < 4.0:
-            if self._user_was_away:
+        # check returned from away
+        source = self.config.get("perception_source", "tag")
+        if source == "camera":
+            if getattr(self, "_camera_user_present", False):
+                if self._user_was_away:
+                    self._user_was_away = False
+                    self._show_welcome_back()
+                self._last_user_active_time = now
+        else:
+            idle_sec = self._get_windows_idle_seconds()
+            tag_is_worn = self._is_tag_worn()
+
+            if self._tag_connected and not tag_is_worn and idle_sec >= away_threshold:
+                self._user_was_away = True
+            elif self._user_was_away and self._tag_connected and tag_is_worn:
                 self._user_was_away = False
                 self._show_welcome_back()
-            self._last_user_active_time = now
+            elif idle_sec < 4.0:
+                self._last_user_active_time = now
 
     @Slot()
     def open_calibration(self):
@@ -720,6 +826,20 @@ class SlouchdApp:
             self.dimmer.set_dimmed(False)
             if self._was_slouching:
                 self._handle_slouch_ended()
+            self._prompt_hud.hide()
+            self._sustained_timer.stop()
+            self._alarm_history.clear()
+            self._user_was_away = False
+            self._camera_away_start = 0.0
+            self._tag_disconnect_time = 0.0
+            self._locked_since = 0.0
+            self._startup_welcome_pending = False
+        else:
+            self._user_was_away = False
+            self._last_presence_tick = time.time()
+            self._last_user_active_time = time.time()
+            self._camera_away_start = 0.0
+            self._locked_since = 0.0
 
     def exit_app(self):
         if hasattr(self, "_presence_timer"):

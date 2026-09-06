@@ -190,10 +190,9 @@ class CameraWorker(QThread):
                     last_slouch_seen = None
                     is_confirmed_slouching = False
             else:
-                if last_slouch_seen is not None and (now - last_slouch_seen) > 2.0:	# if pose is temporarily lost (like rapid head movement) allow a little tolerance before clearing
-                    slouch_start_time = None
-                    last_slouch_seen = None
-                    is_confirmed_slouching = False
+                slouch_start_time = None	# clear slouching when no pose detected
+                last_slouch_seen = None
+                is_confirmed_slouching = False
 
             qimg = None
             if is_preview and annotated_frame is not None:

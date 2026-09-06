@@ -91,6 +91,31 @@ class PostureDetector:
         except Exception:
             pass
 
+    def _is_valid_pose_geometry(self, nose, l_ear, r_ear, l_shoulder, r_shoulder, shoulder_width, inter_ear_dist, ear_shoulder_dist, nose_shoulder_dist) -> bool:
+        """validate pose geometry to reject false background detections"""
+        # head must be vertically above shoulders
+        if ear_shoulder_dist <= 0.015 or nose_shoulder_dist <= 0.015:
+            return False
+
+        # nose must be above shoulders midpoint
+        shoulders_y = (l_shoulder[1] + r_shoulder[1]) / 2.0
+        if nose[1] >= shoulders_y:
+            return False
+
+        # minimum shoulder width for seated user
+        if shoulder_width < 0.14:
+            return False
+
+        # minimum distance between ears
+        if inter_ear_dist < 0.035:
+            return False
+
+        # head cannot be at the bottom edge
+        if nose[1] > 0.85:
+            return False
+
+        return True
+
     def process_frame(self, frame_bgr, annotate: bool = True):
         """process bgr frame and return posture metrics."""
         h, w, _ = frame_bgr.shape
@@ -152,6 +177,9 @@ class PostureDetector:
                     shoulder_width = 1e-4
 
                 inter_ear_dist = float(np.linalg.norm(l_ear[:2] - r_ear[:2]))
+                if not self._is_valid_pose_geometry(nose, l_ear, r_ear, l_shoulder, r_shoulder, shoulder_width, inter_ear_dist, ear_shoulder_dist, nose_shoulder_dist):
+                    return None, annotated_frame
+
                 normalized_ear_shoulder = ear_shoulder_dist / shoulder_width
                 normalized_nose_shoulder = nose_shoulder_dist / shoulder_width
 
@@ -222,6 +250,9 @@ class PostureDetector:
                 nose_shoulder_dist = shoulders_midpoint[1] - nose[1]
                 shoulder_width = max(1e-4, float(np.linalg.norm(l_shoulder[:2] - r_shoulder[:2])))
                 inter_ear_dist = float(np.linalg.norm(l_ear[:2] - r_ear[:2]))
+                if not self._is_valid_pose_geometry(nose, l_ear, r_ear, l_shoulder, r_shoulder, shoulder_width, inter_ear_dist, ear_shoulder_dist, nose_shoulder_dist):
+                    return None, annotated_frame
+
                 normalized_ear_shoulder = ear_shoulder_dist / shoulder_width
                 normalized_nose_shoulder = nose_shoulder_dist / shoulder_width
 
@@ -298,6 +329,11 @@ class PostureDetector:
             return False, 0.0
 
         if metrics.get("visibility", 1.0) < 0.35:	# ignore low confidence poses or occluded ones
+            return False, 0.0
+
+        # reject detections much smaller than calibrated shoulders
+        base_w = baseline.get("shoulder_width", 0.0)
+        if base_w > 0.1 and metrics.get("shoulder_width", 0.0) < base_w * 0.35:
             return False, 0.0
 
         base_norm_dist = baseline.get("normalized_ear_shoulder", 0.0)
