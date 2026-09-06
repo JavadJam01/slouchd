@@ -1,5 +1,5 @@
 ; inno setup script for slouchd
-; offline windows installer with silent startup and start menu shortcut
+; offline windows installer with silent startup, start menu, and desktop shortcuts
 
 #define MyAppName "slouchd"
 #ifndef MyAppVersion
@@ -46,6 +46,7 @@ Type: filesandordirs; Name: "{app}\_internal"
 
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"
 
 [Registry]
 ; silently register startup on windows boot without admin rights

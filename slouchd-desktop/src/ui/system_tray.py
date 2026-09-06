@@ -1,5 +1,5 @@
 import sys
-from PySide6.QtCore import Qt, Signal, QRectF, QPoint
+from PySide6.QtCore import Qt, Signal, QRectF, QPoint, QTimer
 from PySide6.QtWidgets import QSystemTrayIcon, QMenu, QWidgetAction, QLabel, QWidget, QHBoxLayout
 from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QAction, QActionGroup, QPainterPath, QCursor, QGuiApplication
 
@@ -150,6 +150,65 @@ def draw_battery_icon(pct: int, w: int = 22, h: int = 11) -> QPixmap:
     painter.end()
     return pix
 
+def promote_tray_icon_windows(target_exe_path: str | None = None) -> bool:
+    """Ensures the slouchd system tray icon is promoted (always visible on taskbar) on Windows 10/11.
+
+    Finds the app's entry in HKCU\\Control Panel\\NotifyIconSettings and sets 'IsPromoted' to 1.
+    Windows Explorer detects this change immediately without requiring an explorer restart.
+    """
+    if sys.platform != "win32":
+        return False
+
+    try:
+        import winreg
+        from pathlib import Path
+
+        if target_exe_path:
+            current_exe = str(Path(target_exe_path).resolve()).replace("/", "\\").lower()
+        else:
+            current_exe = str(Path(sys.executable).resolve()).replace("/", "\\").lower()
+
+        target_names = ["slouchd.exe"]
+        if not getattr(sys, "frozen", False):
+            target_names.append(Path(sys.executable).name.lower())
+
+        reg_path = r"Control Panel\NotifyIconSettings"
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, reg_path, 0, winreg.KEY_READ) as root_key:
+            num_subkeys, _, _ = winreg.QueryInfoKey(root_key)
+            promoted_any = False
+
+            for i in range(num_subkeys):
+                subkey_name = winreg.EnumKey(root_key, i)
+                try:
+                    with winreg.OpenKey(root_key, subkey_name, 0, winreg.KEY_READ) as subkey:
+                        exe_path, _ = winreg.QueryValueEx(subkey, "ExecutablePath")
+                        exe_path_norm = exe_path.strip().replace("/", "\\").lower()
+
+                        is_match = (exe_path_norm == current_exe) or any(
+                            exe_path_norm.endswith("\\" + name) for name in target_names
+                        )
+
+                        if not is_match:
+                            continue
+
+                        try:
+                            is_promoted, _ = winreg.QueryValueEx(subkey, "IsPromoted")
+                        except FileNotFoundError:
+                            is_promoted = 0
+
+                    if is_match and is_promoted != 1:
+                        with winreg.OpenKey(root_key, subkey_name, 0, winreg.KEY_SET_VALUE) as subkey_write:
+                            winreg.SetValueEx(subkey_write, "IsPromoted", 0, winreg.REG_DWORD, 1)
+                        promoted_any = True
+                    elif is_match and is_promoted == 1:
+                        promoted_any = True
+                except OSError:
+                    continue
+
+            return promoted_any
+    except Exception:
+        return False
+
 class SlouchdTrayIcon(QSystemTrayIcon):
     calibrate_requested = Signal()
     settings_requested = Signal()
@@ -167,6 +226,7 @@ class SlouchdTrayIcon(QSystemTrayIcon):
         self.battery_pct = -1
         self._tag_status_override = None
         self._tag_status_is_error = False
+        self._promotion_scheduled = False
         
         self.menu = QMenu()	# context menu
         self.menu.setObjectName("tray_menu")
@@ -289,6 +349,29 @@ class SlouchdTrayIcon(QSystemTrayIcon):
         self.activated.connect(self._on_tray_activated)
         if sys.platform != "win32":
             self.setContextMenu(self.menu)
+
+    def show(self):
+        super().show()
+        if sys.platform == "win32" and not self._promotion_scheduled:
+            self._promotion_scheduled = True
+            self._schedule_windows_promotion()
+
+    def setVisible(self, visible: bool):
+        super().setVisible(visible)
+        if visible and sys.platform == "win32" and not self._promotion_scheduled:
+            self._promotion_scheduled = True
+            self._schedule_windows_promotion()
+
+    def _schedule_windows_promotion(self, attempts_left: int = 3, delay_ms: int = 1000):
+        if sys.platform != "win32":
+            return
+
+        def _attempt():
+            success = promote_tray_icon_windows()
+            if not success and attempts_left > 1:
+                QTimer.singleShot(2000, lambda: self._schedule_windows_promotion(attempts_left - 1, 2000))
+
+        QTimer.singleShot(delay_ms, _attempt)
 
     def _on_tray_activated(self, reason):
         if reason in (
