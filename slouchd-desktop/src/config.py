@@ -41,6 +41,9 @@ DEFAULT_CONFIG = {
     "check_interval_sec": 1.0,	# sampling interval in seconds
     "audio_alert": True,
     "audio_sound": "notification-1.wav",
+    "position_prompt_alarm_count": 3,	# alarms required to trigger prompt
+    "position_prompt_window_sec": 35.0,	# window in seconds for alarm count
+    "position_prompt_sustained_sec": 3.2,	# sustained slouch seconds before prompt
     "baseline": {
         "calibrated": False,
         "ear_shoulder_dist": 0.0,
@@ -90,6 +93,10 @@ class ConfigManager:
                     with open(self.config_path, "r", encoding="utf-8") as f:
                         saved = json.load(f)
                         self._data.update(saved)
+                        # sync position prompt metrics from default_config
+                        for k in ("position_prompt_alarm_count", "position_prompt_window_sec", "position_prompt_sustained_sec"):
+                            if k in DEFAULT_CONFIG:
+                                self._data[k] = DEFAULT_CONFIG[k]
                 except Exception as e:
                     print(f"error loading config, using default: {e}")
 

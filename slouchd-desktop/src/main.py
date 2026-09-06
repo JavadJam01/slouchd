@@ -22,7 +22,7 @@ from src.ble.worker import BleTagWorker
 from src.ui.overlay import MultiScreenDimmer
 from src.ui.system_tray import SlouchdTrayIcon
 from src.ui.main_window import SlouchdWindow
-from src.ui.calibration_hud import CalibrationHUD
+from src.ui.calibration_hud import CalibrationHUD, PositionPromptHUD
 from src.ui.updater import PeriodicUpdateChecker
 
 class SlouchdApp:
@@ -56,6 +56,16 @@ class SlouchdApp:
         self._calibrating = False
         self._calib_samples = []
         self._calib_hud = CalibrationHUD()
+        self._prompt_hud = PositionPromptHUD()
+        self._prompt_hud.recalibrate_requested.connect(self.trigger_shortcut_calibration)
+        self.dimmer.register_hud(self._prompt_hud)
+        self.dimmer.register_hud(self._calib_hud)
+
+        self._alarm_history = []
+        self._sustained_timer = QTimer()
+        self._sustained_timer.setSingleShot(True)
+        self._sustained_timer.timeout.connect(self._on_sustained_slouch)
+
         self.hotkey = GlobalHotkey()
         self.hotkey.activated.connect(self.trigger_shortcut_calibration)
 
@@ -144,6 +154,8 @@ class SlouchdApp:
 
     def apply_perception_source(self, source: str):
         self.dimmer.set_dimmed(False)
+        if self._was_slouching:
+            self._handle_slouch_ended()
         self._was_slouching = False
         self._tag_slouch_start = 0.0
 
@@ -253,6 +265,8 @@ class SlouchdApp:
 
         if self.tray.is_paused:
             self.dimmer.set_dimmed(False)
+            if self._was_slouching:
+                self._handle_slouch_ended()
             return
 
         is_calibrated = bool(data.get("calibrated", False) or self.config.get("tag_calibrated", False))
@@ -260,6 +274,8 @@ class SlouchdApp:
 
         if not is_calibrated:
             self.dimmer.set_dimmed(False)
+            if self._was_slouching:
+                self._handle_slouch_ended()
             self._was_slouching = False
             self.tray.update_status(is_calibrated=False, is_slouching=False, user_present=True)
             return
@@ -279,9 +295,13 @@ class SlouchdApp:
         if confirmed_slouch and not self._was_slouching:
             if self.config.get("audio_alert", True):
                 self.play_chime()
+            self.dimmer.set_dimmed(True)
+            self._handle_slouch_started()
+        elif not confirmed_slouch and self._was_slouching:
+            self._handle_slouch_ended()
+            self.dimmer.set_dimmed(False)
 
         self._was_slouching = confirmed_slouch
-        self.dimmer.set_dimmed(confirmed_slouch)
         self.tray.update_status(is_calibrated=True, is_slouching=confirmed_slouch, user_present=True)
 
     @Slot(object, dict, bool, float)	# camera handlers
@@ -304,6 +324,8 @@ class SlouchdApp:
 
         if self.tray.is_paused:
             self.dimmer.set_dimmed(False)
+            if self._was_slouching:
+                self._handle_slouch_ended()
             return
 
         baseline = self.config.get("baseline", {})
@@ -312,6 +334,8 @@ class SlouchdApp:
 
         if not is_calibrated or not user_present:
             self.dimmer.set_dimmed(False)
+            if self._was_slouching:
+                self._handle_slouch_ended()
             self._was_slouching = False
             self.tray.update_status(is_calibrated=is_calibrated, is_slouching=False, user_present=user_present)
             return
@@ -319,9 +343,13 @@ class SlouchdApp:
         if is_slouching and not self._was_slouching:
             if self.config.get("audio_alert", True):
                 self.play_chime()
+            self.dimmer.set_dimmed(True)
+            self._handle_slouch_started()
+        elif not is_slouching and self._was_slouching:
+            self._handle_slouch_ended()
+            self.dimmer.set_dimmed(False)
 
         self._was_slouching = is_slouching
-        self.dimmer.set_dimmed(is_slouching)
         self.tray.update_status(is_calibrated=True, is_slouching=is_slouching, user_present=True)
 
     def _init_audio(self):
@@ -369,8 +397,43 @@ class SlouchdApp:
             self.dimmer.set_dimmed(False)
             self.tray.update_status(is_calibrated=False, is_slouching=False, user_present=False)
 
+    def _handle_slouch_started(self):
+        now = time.time()
+        window_sec = float(self.config.get("position_prompt_window_sec", 35.0))
+        alarm_count = int(self.config.get("position_prompt_alarm_count", 3))
+        sustained_sec = float(self.config.get("position_prompt_sustained_sec", 3.2))
+
+        # prune alarms older than window
+        self._alarm_history = [t for t in self._alarm_history if (now - t) <= window_sec]
+        self._alarm_history.append(now)
+
+        if len(self._alarm_history) >= alarm_count:
+            # frequent alarms in short period
+            self._sustained_timer.stop()
+            self._prompt_hud.show_prompt()
+            self.dimmer._keep_huds_on_top()
+        else:
+            # check if slouch is held for sustained duration
+            self._sustained_timer.start(max(100, int(sustained_sec * 1000)))
+
+    def _handle_slouch_ended(self):
+        self._sustained_timer.stop()
+        self._prompt_hud.hide()
+
+    def _on_sustained_slouch(self):
+        if self._was_slouching:
+            self._prompt_hud.show_prompt()
+            self.dimmer._keep_huds_on_top()
+
     @Slot()
     def trigger_shortcut_calibration(self):
+        self._alarm_history.clear()
+        self._sustained_timer.stop()
+        self._prompt_hud.hide()
+        self.dimmer.set_dimmed(False)
+        self._was_slouching = False
+        self._tag_slouch_start = 0.0
+
         source = self.config.get("perception_source", "tag")
         if source == "tag" and not self._tag_connected:
             self._calib_hud.show_error("tag not connected")
@@ -386,6 +449,11 @@ class SlouchdApp:
 
     def _finalize_shortcut_calibration(self):
         self._calibrating = False
+        self._alarm_history.clear()
+        self._sustained_timer.stop()
+        self._prompt_hud.hide()
+        self._was_slouching = False
+        self._tag_slouch_start = 0.0
         source = self.config.get("perception_source", "tag")
         if source == "tag":
             avg_pitch = sum(self._calib_samples) / float(len(self._calib_samples))
@@ -466,10 +534,13 @@ class SlouchdApp:
 
         if is_paused:
             self.dimmer.set_dimmed(False)
+            if self._was_slouching:
+                self._handle_slouch_ended()
 
     def exit_app(self):
         self.hotkey.close()
         self._calib_hud.close()
+        self._prompt_hud.close()
         self.dimmer.set_dimmed(False)
         self.tray.hide()
         self.ble_worker.stop()

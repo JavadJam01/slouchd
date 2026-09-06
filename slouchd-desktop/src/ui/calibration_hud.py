@@ -1,3 +1,4 @@
+import sys
 from PySide6.QtCore import Qt, QTimer, QRectF, Signal
 from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QProgressBar
 from PySide6.QtGui import QGuiApplication, QPainter, QColor, QPen, QPainterPath
@@ -69,6 +70,16 @@ class CalibrationHUD(QWidget):
             y = geom.y() + 14
             self.move(x, y)
 
+    def bring_to_front(self):
+        """keep hud above overlay windows"""
+        self.raise_()
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                ctypes.windll.user32.SetWindowPos(int(self.winId()), 0, 0, 0, 0, 0, 0x0013)
+            except Exception:
+                pass
+
     def show_progress(self, pct: int, msg: str = "calibrating..."):
         self._hide_timer.stop()
         self._border_color = QColor("#3F3F46")
@@ -93,6 +104,7 @@ class CalibrationHUD(QWidget):
         self._reposition()
         self.update()
         self.show()
+        self.bring_to_front()
 
     def show_done(self, msg: str = "posture calibrated"):
         self._border_color = QColor("#10B981")
@@ -102,6 +114,7 @@ class CalibrationHUD(QWidget):
         self._reposition()
         self.update()
         self.show()
+        self.bring_to_front()
         self._hide_timer.start(1200)
 
     def show_error(self, err_msg: str):
@@ -123,6 +136,7 @@ class CalibrationHUD(QWidget):
         self._reposition()
         self.update()
         self.show()
+        self.bring_to_front()
         self._hide_timer.start(1600)
 
     def paintEvent(self, event):
@@ -134,6 +148,100 @@ class CalibrationHUD(QWidget):
         path.addRoundedRect(rect, 12, 12)
 
         painter.fillPath(path, QColor("#09090B"))
+        painter.setPen(QPen(self._border_color, 1.5))
+        painter.drawPath(path)
+        painter.end()
+
+
+class PositionPromptHUD(QWidget):
+    """hud prompting user when position change or frequent alarms detected"""
+    recalibrate_requested = Signal()
+    WIDTH = 350
+    HEIGHT = 54
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint |
+            Qt.WindowType.WindowStaysOnTopHint |
+            Qt.WindowType.Tool |
+            Qt.WindowType.WindowDoesNotAcceptFocus
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setFixedSize(self.WIDTH, self.HEIGHT)
+
+        self._bg_color = QColor("#FACC15")
+        self._border_color = QColor("#CA8A04")
+
+        from PySide6.QtWidgets import QHBoxLayout, QPushButton
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(18, 8, 14, 8)
+        layout.setSpacing(12)
+
+        self.msg_lbl = QLabel("new sitting position?", self)
+        self.msg_lbl.setStyleSheet("color: #18181B; font-size: 17px; font-weight: 700; font-family: 'Segoe UI', -apple-system, sans-serif;")
+        layout.addWidget(self.msg_lbl, 1)
+
+        self.btn_recalib = QPushButton("recalibrate", self)
+        self.btn_recalib.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_recalib.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.btn_recalib.setStyleSheet("""
+            QPushButton {
+                background-color: #18181B;
+                color: #FAFAFA;
+                font-family: 'Segoe UI', -apple-system, sans-serif;
+                font-size: 15px;
+                font-weight: 700;
+                padding: 6px 16px;
+                border: 1px solid #27272A;
+                border-radius: 8px;
+            }
+            QPushButton:hover {
+                background-color: #27272A;
+                border: 1px solid #3F3F46;
+                color: #FFFFFF;
+            }
+            QPushButton:pressed {
+                background-color: #09090B;
+                border: 1px solid #000000;
+            }
+        """)
+        self.btn_recalib.clicked.connect(self.recalibrate_requested)
+        layout.addWidget(self.btn_recalib)
+
+    def _reposition(self):
+        screen = QGuiApplication.primaryScreen()
+        if screen:
+            geom = screen.geometry()
+            x = geom.x() + (geom.width() - self.WIDTH) // 2
+            y = geom.y() + 14
+            self.move(x, y)
+
+    def bring_to_front(self):
+        """keep hud above overlay windows"""
+        self.raise_()
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                ctypes.windll.user32.SetWindowPos(int(self.winId()), 0, 0, 0, 0, 0, 0x0013)
+            except Exception:
+                pass
+
+    def show_prompt(self):
+        self._reposition()
+        self.show()
+        self.bring_to_front()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
+        rect = QRectF(self.rect()).adjusted(1, 1, -1, -1)
+        path = QPainterPath()
+        path.addRoundedRect(rect, 13, 13)
+
+        painter.fillPath(path, self._bg_color)
         painter.setPen(QPen(self._border_color, 1.5))
         painter.drawPath(path)
         painter.end()

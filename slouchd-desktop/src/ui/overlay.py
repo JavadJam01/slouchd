@@ -1,3 +1,4 @@
+import sys
 from PySide6.QtCore import Qt, QRect, QPointF, Slot
 from PySide6.QtWidgets import QWidget, QLabel
 from PySide6.QtGui import (
@@ -100,6 +101,7 @@ class MultiScreenDimmer(QWidget):
         super().__init__()
         self.config = config_manager
         self._is_dimmed = False
+        self._huds = []
 
         self.setWindowFlags(	# clickthrough transparent overlay flags
             Qt.WindowType.WindowStaysOnTopHint |
@@ -122,6 +124,26 @@ class MultiScreenDimmer(QWidget):
             app.screenRemoved.connect(self._on_screens_changed)
             for screen in QGuiApplication.screens():
                 screen.geometryChanged.connect(self._on_screens_changed)
+
+    def register_hud(self, hud):
+        """register a hud widget to keep on top"""
+        if hud and hud not in self._huds:
+            self._huds.append(hud)
+
+    def _keep_huds_on_top(self):
+        """ensure registered huds stay above dimmer window"""
+        for hud in self._huds:
+            if hud and hud.isVisible():
+                if hasattr(hud, "bring_to_front"):
+                    hud.bring_to_front()
+                else:
+                    hud.raise_()
+                if sys.platform == "win32":
+                    try:
+                        import ctypes
+                        ctypes.windll.user32.SetWindowPos(int(self.winId()), int(hud.winId()), 0, 0, 0, 0, 0x0013)
+                    except Exception:
+                        pass
 
     @Slot()
     def _on_screens_changed(self, *args):
@@ -156,6 +178,7 @@ class MultiScreenDimmer(QWidget):
             self.update_geometry()
             self.show()
             self.update()
+            self._keep_huds_on_top()
         else:
             self.hide()
 
@@ -181,7 +204,6 @@ class MultiScreenDimmer(QWidget):
         opacity = max(0.0, min(1.0, opacity))
         alpha = int(255 * opacity)
 
-        overlay_color = QColor(10, 10, 12, alpha)	# base dark dimming overlay
         overlay_color = QColor(0, 0, 0, alpha)	# base dark dimming overlay
         painter.fillRect(self.rect(), overlay_color)
 
