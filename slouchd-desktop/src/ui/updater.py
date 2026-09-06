@@ -157,6 +157,7 @@ class UpdateDialog(QDialog):
                 font-family: 'Segoe UI', -apple-system, sans-serif;
             }
             QLabel {
+                background-color: transparent;
                 color: #E4E4E7;
                 font-family: 'Segoe UI', -apple-system, sans-serif;
             }
@@ -190,7 +191,7 @@ class UpdateDialog(QDialog):
         header_layout = QHBoxLayout()
         self.title_label = QLabel("check for updates")
         self.title_label.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
-        self.title_label.setStyleSheet("color: #F4F4F5;")
+        self.title_label.setStyleSheet("color: #F4F4F5; background: transparent;")
 
         self.version_badge = QLabel(f"v{self.current_version}")
         self.version_badge.setStyleSheet(
