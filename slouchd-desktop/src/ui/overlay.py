@@ -122,8 +122,10 @@ class MultiScreenDimmer(QWidget):
         if app:
             app.screenAdded.connect(self._on_screens_changed)
             app.screenRemoved.connect(self._on_screens_changed)
+            app.primaryScreenChanged.connect(self._on_screens_changed)
             for screen in QGuiApplication.screens():
                 screen.geometryChanged.connect(self._on_screens_changed)
+                screen.availableGeometryChanged.connect(self._on_screens_changed)
 
     def register_hud(self, hud):
         """register a hud widget to keep on top"""
@@ -147,6 +149,17 @@ class MultiScreenDimmer(QWidget):
 
     @Slot()
     def _on_screens_changed(self, *args):
+        for screen in QGuiApplication.screens():
+            try:
+                screen.geometryChanged.disconnect(self._on_screens_changed)
+            except Exception:
+                pass
+            try:
+                screen.availableGeometryChanged.disconnect(self._on_screens_changed)
+            except Exception:
+                pass
+            screen.geometryChanged.connect(self._on_screens_changed)
+            screen.availableGeometryChanged.connect(self._on_screens_changed)
         self.update_geometry()
 
     def update_geometry(self):
@@ -162,10 +175,12 @@ class MultiScreenDimmer(QWidget):
 
         primary = QGuiApplication.primaryScreen() or screens[0]	# center banner on primary screen
         p_geom = primary.geometry()
+        p_avail = primary.availableGeometry()
+        ref = p_avail if (p_avail.isValid() and not p_avail.isEmpty()) else p_geom
         self.label.adjustSize()
         hint = self.label.size()
-        rel_x = (p_geom.x() - combined_rect.x()) + (p_geom.width() - hint.width()) // 2
-        rel_y = (p_geom.y() - combined_rect.y()) + (p_geom.height() - hint.height()) // 2
+        rel_x = (ref.x() - combined_rect.x()) + (ref.width() - hint.width()) // 2
+        rel_y = (ref.y() - combined_rect.y()) + (ref.height() - hint.height()) // 2
         self.label.move(rel_x, rel_y)
 
     def set_dimmed(self, dim: bool):

@@ -65,11 +65,10 @@ class CalibrationHUD(QWidget):
             return
         screen = QGuiApplication.primaryScreen()
         if screen:
-            geom = screen.geometry()
             avail = screen.availableGeometry()
-            x = geom.x() + (geom.width() - self.WIDTH) // 2
-            top_y = avail.y() if avail.isValid() else geom.y()
-            y = top_y + 14
+            ref = avail if (avail.isValid() and not avail.isEmpty()) else screen.geometry()
+            x = ref.x() + (ref.width() - self.WIDTH) // 2
+            y = ref.y() + 14
             self.move(x, y)
 
     def showEvent(self, event):
@@ -360,11 +359,10 @@ class PositionPromptHUD(QWidget):
     def _reposition(self):
         screen = QGuiApplication.primaryScreen()
         if screen:
-            geom = screen.geometry()
             avail = screen.availableGeometry()
-            x = geom.x() + (geom.width() - self.WIDTH) // 2
-            top_y = avail.y() if avail.isValid() else geom.y()
-            y = top_y + 14
+            ref = avail if (avail.isValid() and not avail.isEmpty()) else screen.geometry()
+            x = ref.x() + (ref.width() - self.WIDTH) // 2
+            y = ref.y() + 14
             self.move(x, y)
 
     def showEvent(self, event):
