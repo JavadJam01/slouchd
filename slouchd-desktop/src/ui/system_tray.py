@@ -295,36 +295,41 @@ class SlouchdTrayIcon(QSystemTrayIcon):
             }
         """)
 
-        self.header_widget = QWidget()
-        self.header_widget.setStyleSheet("background-color: transparent;")
-        header_layout = QHBoxLayout(self.header_widget)
-        header_layout.setContentsMargins(16, 8, 16, 4)
-        header_layout.setSpacing(8)
+        if sys.platform == "win32":
+            self.header_widget = QWidget()
+            self.header_widget.setStyleSheet("background-color: transparent;")
+            header_layout = QHBoxLayout(self.header_widget)
+            header_layout.setContentsMargins(16, 8, 16, 4)
+            header_layout.setSpacing(8)
 
-        self.status_label = QLabel("starting...")
-        self.status_label.setStyleSheet("color: #F59E0B; font-size: 13px; font-weight: 600;")
-        header_layout.addWidget(self.status_label)
+            self.status_label = QLabel("starting...")
+            self.status_label.setStyleSheet("color: #F59E0B; font-size: 13px; font-weight: 600;")
+            header_layout.addWidget(self.status_label)
 
-        header_layout.addStretch()
+            header_layout.addStretch()
 
-        self.bat_widget = QWidget()
-        self.bat_widget.setStyleSheet("background-color: transparent;")
-        bat_layout = QHBoxLayout(self.bat_widget)
-        bat_layout.setContentsMargins(0, 0, 0, 0)
-        bat_layout.setSpacing(5)
+            self.bat_widget = QWidget()
+            self.bat_widget.setStyleSheet("background-color: transparent;")
+            bat_layout = QHBoxLayout(self.bat_widget)
+            bat_layout.setContentsMargins(0, 0, 0, 0)
+            bat_layout.setSpacing(5)
 
-        self.bat_icon = QLabel()
-        bat_layout.addWidget(self.bat_icon)
+            self.bat_icon = QLabel()
+            bat_layout.addWidget(self.bat_icon)
 
-        self.bat_text = QLabel("")
-        self.bat_text.setStyleSheet("color: #A1A1AA; font-size: 12px; font-weight: 500; font-family: 'Segoe UI', -apple-system, sans-serif;")
-        bat_layout.addWidget(self.bat_text)
+            self.bat_text = QLabel("")
+            self.bat_text.setStyleSheet("color: #A1A1AA; font-size: 12px; font-weight: 500; font-family: 'Segoe UI', -apple-system, sans-serif;")
+            bat_layout.addWidget(self.bat_text)
 
-        header_layout.addWidget(self.bat_widget)
-        self.bat_widget.setVisible(False)
+            header_layout.addWidget(self.bat_widget)
+            self.bat_widget.setVisible(False)
 
-        self.status_action = QWidgetAction(self.menu)
-        self.status_action.setDefaultWidget(self.header_widget)
+            self.status_action = QWidgetAction(self.menu)
+            self.status_action.setDefaultWidget(self.header_widget)
+        else:
+            self.status_action = QAction("starting...", self.menu)
+            self.status_action.setEnabled(False)
+
         self.menu.addAction(self.status_action)
         self.menu.addSeparator()
 
@@ -531,6 +536,12 @@ class SlouchdTrayIcon(QSystemTrayIcon):
                 self.bat_widget.setToolTip("collar tag disconnected")
                 self.bat_widget.setVisible(True)
                 self.action_source_tag.setText("wearable tag")
+
+        if hasattr(self, "status_action"):
+            status_action_text = status_str
+            if self.perception_source == "tag" and self.tag_connected and self.battery_pct >= 0:
+                status_action_text = f"{status_str} ({self.battery_pct}%)"
+            self.status_action.setText(status_action_text)
 
     def _apply_state(self, state: str):
         self._current_state = state
