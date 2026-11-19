@@ -1,5 +1,5 @@
 import sys
-from PySide6.QtCore import Qt, QRect, QPointF, Slot
+from PySide6.QtCore import Qt, QRect, QPoint, QPointF, Slot
 from PySide6.QtWidgets import QWidget, QLabel
 from PySide6.QtGui import (
     QColor, QFont, QFontMetrics, QPainter, QGuiApplication,
@@ -32,8 +32,10 @@ class SlouchBanner(QWidget):
         fm = QFontMetrics(self.font)
         sub_fm = QFontMetrics(self.sub_font)
         self.cap_height = fm.capHeight()
-        self.text_width = fm.horizontalAdvance(self.text)
-        self.sub_text_width = sub_fm.horizontalAdvance(self.sub_text)
+        tight_text = fm.tightBoundingRect(self.text)
+        self.text_width = tight_text.width()
+        self.text_bearing_x = tight_text.x()
+        self.sub_text_width = sub_fm.tightBoundingRect(self.sub_text).width()
 
         if self._s_pixmap and not self._s_pixmap.isNull():
             # scale logo height to font
@@ -46,10 +48,12 @@ class SlouchBanner(QWidget):
             self.s_width = 0
             self.gap = 0
             self.text = "SLOUCH"
-            self.text_width = fm.horizontalAdvance(self.text)
+            tight_text = fm.tightBoundingRect(self.text)
+            self.text_width = tight_text.width()
+            self.text_bearing_x = tight_text.x()
 
         main_w = self.s_width + self.gap + self.text_width
-        total_w = max(main_w, self.sub_text_width) + 24
+        total_w = max(main_w, self.sub_text_width) + 32
         main_h = max(self.s_height, fm.height())
         self.sub_height = sub_fm.height()
         total_h = main_h + 12 + self.sub_height + 30
@@ -79,9 +83,9 @@ class SlouchBanner(QWidget):
             )
             painter.setOpacity(110 / 255.0)
             painter.drawPixmap(start_x, s_top, scaled_s)
-            text_x = start_x + self.s_width + self.gap
+            text_x = start_x + self.s_width + self.gap - getattr(self, "text_bearing_x", 0)
         else:
-            text_x = start_x
+            text_x = start_x - getattr(self, "text_bearing_x", 0)
 
         painter.setOpacity(1.0)
         painter.setFont(self.font)
@@ -172,16 +176,41 @@ class MultiScreenDimmer(QWidget):
         for screen in screens:
             combined_rect = combined_rect.united(screen.geometry())
         self.setGeometry(combined_rect)
+        self._reposition_banner(combined_rect)
 
-        primary = QGuiApplication.primaryScreen() or screens[0]	# center banner on primary screen
+    def _reposition_banner(self, combined_rect=None):
+        screens = QGuiApplication.screens()
+        if not screens:
+            return
+        primary = QGuiApplication.primaryScreen() or screens[0]
         p_geom = primary.geometry()
         p_avail = primary.availableGeometry()
         ref = p_avail if (p_avail.isValid() and not p_avail.isEmpty()) else p_geom
+
         self.label.adjustSize()
         hint = self.label.size()
-        rel_x = (ref.x() - combined_rect.x()) + (ref.width() - hint.width()) // 2
-        rel_y = (ref.y() - combined_rect.y()) + (ref.height() - hint.height()) // 2
-        self.label.move(rel_x, rel_y)
+        target_gx = ref.x() + (ref.width() - hint.width()) // 2
+        target_gy = ref.y() + (ref.height() - hint.height()) // 2
+
+        if self.isVisible():
+            local_pos = self.mapFromGlobal(QPoint(target_gx, target_gy))
+            self.label.move(local_pos)
+        else:
+            win_x = self.pos().x() if self.pos() != QPoint(0, 0) else (combined_rect.x() if combined_rect else 0)
+            win_y = self.pos().y() if self.pos() != QPoint(0, 0) else (combined_rect.y() if combined_rect else 0)
+            self.label.move(target_gx - win_x, target_gy - win_y)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._reposition_banner()
+
+    def moveEvent(self, event):
+        super().moveEvent(event)
+        self._reposition_banner()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._reposition_banner()
 
     def set_dimmed(self, dim: bool):
         if self._is_dimmed == dim:
@@ -192,6 +221,7 @@ class MultiScreenDimmer(QWidget):
         if dim:
             self.update_geometry()
             self.show()
+            self._reposition_banner()
             self.update()
             self._keep_huds_on_top()
         else:
