@@ -66,9 +66,15 @@ class CalibrationHUD(QWidget):
         screen = QGuiApplication.primaryScreen()
         if screen:
             geom = screen.geometry()
+            avail = screen.availableGeometry()
             x = geom.x() + (geom.width() - self.WIDTH) // 2
-            y = geom.y() + 14
+            top_y = avail.y() if avail.isValid() else geom.y()
+            y = top_y + 14
             self.move(x, y)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._reposition()
 
     def bring_to_front(self):
         """keep hud above overlay windows"""
@@ -104,6 +110,7 @@ class CalibrationHUD(QWidget):
         self._reposition()
         self.update()
         self.show()
+        self._reposition()
         self.bring_to_front()
 
     def show_done(self, msg: str = "posture calibrated"):
@@ -114,6 +121,7 @@ class CalibrationHUD(QWidget):
         self._reposition()
         self.update()
         self.show()
+        self._reposition()
         self.bring_to_front()
         self._hide_timer.start(1200)
 
@@ -136,6 +144,7 @@ class CalibrationHUD(QWidget):
         self._reposition()
         self.update()
         self.show()
+        self._reposition()
         self.bring_to_front()
         self._hide_timer.start(1600)
 
@@ -352,9 +361,15 @@ class PositionPromptHUD(QWidget):
         screen = QGuiApplication.primaryScreen()
         if screen:
             geom = screen.geometry()
+            avail = screen.availableGeometry()
             x = geom.x() + (geom.width() - self.WIDTH) // 2
-            y = geom.y() + 14
+            top_y = avail.y() if avail.isValid() else geom.y()
+            y = top_y + 14
             self.move(x, y)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._reposition()
 
     def bring_to_front(self):
         """keep hud above overlay windows"""
@@ -384,6 +399,7 @@ class PositionPromptHUD(QWidget):
         self._reposition()
         self.update()
         self.show()
+        self._reposition()
         self.bring_to_front()
         if auto_hide_ms > 0 and hasattr(self, "_auto_hide_timer"):
             self._auto_hide_timer.start(auto_hide_ms)

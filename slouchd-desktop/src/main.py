@@ -1,5 +1,13 @@
 import sys
 import os
+
+if sys.platform.startswith("linux"):
+    # on Linux Wayland sessions (e.g. GNOME Mutter), xdg_toplevel windows cannot be positioned
+    # via move(), which causes overlay HUDs to be centered by the window manager.
+    # preferring xcb (XWayland) ensures proper absolute positioning, stays-on-top, and click-through transparency.
+    if "QT_QPA_PLATFORM" not in os.environ:
+        os.environ["QT_QPA_PLATFORM"] = "xcb;wayland"
+
 import time
 import signal
 import threading

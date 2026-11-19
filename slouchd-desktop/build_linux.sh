@@ -79,7 +79,7 @@ Section: utils
 Priority: optional
 Architecture: amd64
 Maintainer: Javad Jam <slouchd@users.noreply.github.com>
-Depends: libc6, libgl1, libegl1, libdbus-1-3
+Depends: libc6, libgl1, libegl1, libdbus-1-3, libxcb-cursor0
 Description: gentle multi-screen posture and slouch monitor
  slouchd sits quietly in your system tray and monitors your posture
  in the background using a BLE collar tag or webcam, dimming your
@@ -111,6 +111,9 @@ set -e
 HERE="$(dirname "$(readlink -f "${0}")")"
 export PATH="${HERE}/usr/bin:${PATH}"
 export LD_LIBRARY_PATH="${HERE}/usr/bin:${HERE}/usr/bin/_internal:${HERE}/usr/lib:${LD_LIBRARY_PATH}"
+if [ -z "$QT_QPA_PLATFORM" ]; then
+    export QT_QPA_PLATFORM="xcb;wayland"
+fi
 exec "${HERE}/usr/bin/slouchd" "$@"
 EOF
 chmod +x "$APPDIR/AppRun"
@@ -128,6 +131,7 @@ else
 fi
 
 APPIMAGE_OUTPUT="dist/installer/slouchd-${CLEAN_VERSION}-x86_64.AppImage"
+rm -f "$APPIMAGE_OUTPUT"
 ARCH=x86_64 "$APPIMAGETOOL" --appimage-extract-and-run --no-appstream "$APPDIR" "$APPIMAGE_OUTPUT"
 rm -rf "$APPDIR"
 echo "AppImage created -> $APPIMAGE_OUTPUT"
