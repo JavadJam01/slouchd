@@ -871,10 +871,35 @@ def acquire_single_instance_lock() -> bool:
         _single_instance_mutex = kernel32.CreateMutexW(None, False, mutex_name)
         if kernel32.GetLastError() == ERROR_ALREADY_EXISTS:
             return False
+    elif sys.platform.startswith("linux"):
+        import fcntl
+        from pathlib import Path
+        lock_file = Path(tempfile.gettempdir()) / f"slouchd_{os.getuid()}.lock"
+        try:
+            _single_instance_mutex = open(lock_file, "w")
+            fcntl.lockf(_single_instance_mutex, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except (IOError, BlockingIOError):
+            return False
     return True
 
 def main():
     setup_logging()
+
+    if "--calibrate" in sys.argv or "-c" in sys.argv:
+        if sys.platform != "win32":
+            import shutil
+            import subprocess
+            if shutil.which("gdbus"):
+                res = subprocess.run([
+                    "gdbus", "call", "--session",
+                    "--dest", "org.slouchd.App",
+                    "--object-path", "/org/slouchd/App",
+                    "--method", "org.slouchd.App.Recalibrate"
+                ], capture_output=True)
+                if res.returncode == 0:
+                    print("recalibration triggered in running slouchd instance.")
+                    sys.exit(0)
+
     if not acquire_single_instance_lock():
         print("slouchd is already running. exiting duplicate instance.")
         sys.exit(0)
@@ -885,6 +910,8 @@ def main():
         print(f"could not auto-register startup: {e}")
 
     app = SlouchdApp()
+    if "--calibrate" in sys.argv or "-c" in sys.argv:
+        QTimer.singleShot(1000, app.trigger_shortcut_calibration)
     sys.exit(app.run())
 
 if __name__ == "__main__":
