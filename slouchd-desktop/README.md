@@ -16,13 +16,25 @@ as mentioned in the main readme, slouchd-desktop supports two perception sources
 
 ## installation
 
-the easiest way is to grab the installer directly from our releases:
+the easiest way is to grab the installer or binary directly from our releases:
 
-👉 [**download latest installer**](https://github.com/JavadJam01/slouchd/releases/latest)
+👉 [**download latest release**](https://github.com/JavadJam01/slouchd/releases/latest)
 
-just download and run it to use slouchd right out of the box.
+- **windows**:
+  - download `slouchd-setup-*.exe` and run the installer.
+  - *note*: your browser or windows smartscreen might show an unrecognized app warning for new unsigned releases. this is normal for opensource software; click "more info" -> "run anyway".
 
-**note for windows users:** your browser (like edge) might try to discard or flag the download, and windows smartscreen might show an unrecognized app warning when you run the installer. this is normal for new unsigned software and completely safe/opensource. we also scanned the installer on virustotal and it has a completely clean score of **0/67** (check the [virustotal report](https://www.virustotal.com/gui/file/2cf6755f217ec23424813124ad54270ffd4fcca8bef4bc78e5b3f69f3334ef79/detection)). this is temporary untill we submit the binary to microsoft to whitelist it. in edge choose "keep" / "keep anyway", and in smartscreen click "more info" -> "run anyway".
+- **linux (appimage - universal)**:
+  - download `slouchd-*-x86_64.AppImage`
+  - make it executable: `chmod +x slouchd-*-x86_64.AppImage`
+  - double click or run it directly from your terminal/desktop.
+
+- **linux (debian / ubuntu / mint)**:
+  - download `slouchd_*_amd64.deb`
+  - double-click to install via your software center, or run:
+    ```bash
+    sudo apt install ./slouchd_*_amd64.deb
+    ```
 
 ## calibration
 

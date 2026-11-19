@@ -11,11 +11,13 @@ the desktop app is just a software or i rather call it a deamon that can watch y
 but there are people out there who don't want their webcam to be working all the time (note that again that our software is totally offline and also **opensource** so you can investigate it yourself and i appreciate it) or even they might have no webcam or proper drivers for it on their desired operating system, but they deserve a good posture too. if this sounds like you, then if you don't mind assembling and tinkering with some hardware, i prepared an esp32 based wearbale so you can build it yourself with the specifications provided in this project and then you flash our firmware onto it and start using it seamlessly instead of a webcam. good news that this method is gonna be even lighter on your cpu and ram, and also it can keep you alert about your posture in standalone mode (when you are not using your desktop and our software and you are out for a walk, via haptic vibrations). 
 
 ## installation
-you can grab the prebuilt installer directly from the releases page so you can install it with a click and use it out of the box:
+you can grab the prebuilt installers and binaries directly from the releases page so you can run it out of the box:
 
-👉 [**download latest installer**](https://github.com/JavadJam01/slouchd/releases/latest) (or check [all releases](https://github.com/JavadJam01/slouchd/releases))
+👉 [**download latest releases**](https://github.com/JavadJam01/slouchd/releases/latest) (or check [all releases](https://github.com/JavadJam01/slouchd/releases))
 
-just download the installer for your system, run it, and you're good to go.
+- **windows**: download `slouchd-setup-*.exe` and run the installer.
+- **linux (universal)**: download `slouchd-*-x86_64.AppImage`, make it executable (`chmod +x slouchd-*.AppImage`), and run it.
+- **linux (debian / ubuntu / mint)**: download `slouchd_*_amd64.deb` and install with `sudo apt install ./slouchd_*_amd64.deb` (or double-click it).
 
 **note for windows users:** when downloading, your browser (especially microsoft edge) might try to discard or block the download, or windows smartscreen might show an unrecognized app warning during installation. dont worry, this is completely normal for fresh releases without an expensive code-signing certificate. our software is 100% opensource and safe (you can review all the code here yourself). we also scanned the installer on virustotal and it has a completely clean score of **0/68** (link to the virustotal report is always available at [latest release notes](https://github.com/JavadJam01/slouchd/releases/latest). this warning is temporary untill we submit the binary to microsoft to get it whitelisted. for now, you can just click "keep" (or "keep anyway") in your browser, and on windows smartscreen click "more info" -> "run anyway".
 
