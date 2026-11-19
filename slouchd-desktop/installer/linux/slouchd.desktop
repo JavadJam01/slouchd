@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=slouchd
+GenericName=Posture Monitor
+Comment=Gentle multi-screen posture and slouch monitor
+Exec=slouchd
+Icon=slouchd
+Terminal=false
+Categories=Utility;Accessibility;
+Keywords=posture;monitor;slouch;ergonomics;tag;webcam;
+StartupNotify=false
+X-GNOME-Autostart-enabled=true

@@ -1,4 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
+import sys
 from PyInstaller.utils.hooks import collect_all
 
 datas = [
@@ -6,16 +7,24 @@ datas = [
 ]
 binaries = []
 hiddenimports = [
-    'winsound',
-    'winreg',
-    'ctypes',
-    'ctypes.wintypes',
     'src.startup',
     'src.logging_config',
 ]
 
+if sys.platform == "win32":
+    hiddenimports += [
+        'winsound',
+        'winreg',
+        'ctypes',
+        'ctypes.wintypes',
+    ]
+
 # bundle binaries and data for offline use
-for package_name in ['mediapipe', 'bleak', 'winrt', 'cv2']:
+packages_to_collect = ['mediapipe', 'bleak', 'cv2']
+if sys.platform == "win32":
+    packages_to_collect.append('winrt')
+
+for package_name in packages_to_collect:
     pkg_datas, pkg_binaries, pkg_hidden = collect_all(package_name)
     datas += pkg_datas
     binaries += pkg_binaries
@@ -37,24 +46,30 @@ a = Analysis(
 
 pyz = PYZ(a.pure)
 
+exe_kwargs = {
+    'name': 'slouchd',
+    'debug': False,
+    'bootloader_ignore_signals': False,
+    'strip': False,
+    'upx': False,	# avoid upx packing so antivirus heuristics dont trigger
+    'console': False,	# windowed daemon, no terminal window
+    'disable_windowed_traceback': False,
+    'argv_emulation': False,
+    'target_arch': None,
+    'codesign_identity': None,
+    'entitlements_file': None,
+}
+
+if sys.platform == "win32":
+    exe_kwargs['icon'] = 'assets/icon.ico'
+    exe_kwargs['version'] = 'version_info.txt'
+
 exe = EXE(
     pyz,
     a.scripts,
     [],
     exclude_binaries=True,
-    name='slouchd',
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=False,	# avoid upx packing so antivirus heuristics dont trigger
-    console=False,	# windowed daemon, no terminal window
-    disable_windowed_traceback=False,
-    argv_emulation=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
-    icon='assets/icon.ico',
-    version='version_info.txt',
+    **exe_kwargs,
 )
 
 coll = COLLECT(
