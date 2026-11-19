@@ -85,14 +85,25 @@ class UpdateCheckWorker(QThread):
                     result["release_notes"] = data.get("body", "")
                     result["release_url"] = data.get("html_url", result["release_url"])
 
-                    # locate installer executable asset
+                    # locate platform-appropriate asset
                     assets = data.get("assets", [])
-                    exe_asset = next(
-                        (a for a in assets if a.get("name", "").lower().endswith(".exe")),
-                        None
-                    )
-                    if exe_asset:
-                        result["download_url"] = exe_asset.get("browser_download_url", result["release_url"])
+                    matched_asset = None
+                    if sys.platform == "win32":
+                        matched_asset = next(
+                            (a for a in assets if a.get("name", "").lower().endswith(".exe")),
+                            None
+                        )
+                    else:
+                        matched_asset = next(
+                            (a for a in assets if a.get("name", "").endswith(".AppImage")),
+                            None
+                        ) or next(
+                            (a for a in assets if a.get("name", "").endswith(".deb")),
+                            None
+                        )
+
+                    if matched_asset:
+                        result["download_url"] = matched_asset.get("browser_download_url", result["release_url"])
                     else:
                         result["download_url"] = result["release_url"]
 
@@ -122,7 +133,10 @@ class UpdateCheckWorker(QThread):
                     result["release_name"] = f"slouchd {latest_tag}"
                     result["release_url"] = final_url
                     clean_tag = latest_tag if latest_tag.startswith("v") else f"v{latest_tag}"
-                    result["download_url"] = f"https://github.com/{self.repo}/releases/download/{latest_tag}/slouchd-setup-{clean_tag}.exe"
+                    if sys.platform == "win32":
+                        result["download_url"] = f"https://github.com/{self.repo}/releases/download/{latest_tag}/slouchd-setup-{clean_tag}.exe"
+                    else:
+                        result["download_url"] = f"https://github.com/{self.repo}/releases/download/{latest_tag}/slouchd-{clean_tag}-x86_64.AppImage"
 
                     cur_tuple = parse_version_tuple(self.current_version)
                     latest_tuple = parse_version_tuple(clean_latest)
