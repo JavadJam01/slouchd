@@ -13,6 +13,7 @@ class CalibrationHUD(QWidget):
     def __init__(self, parent=None, is_window: bool = True):
         super().__init__(parent)
         self._is_window = is_window
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         if is_window:
             self.setWindowFlags(
                 Qt.WindowType.FramelessWindowHint |
@@ -21,8 +22,6 @@ class CalibrationHUD(QWidget):
                 Qt.WindowType.WindowDoesNotAcceptFocus
             )
             self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
-            make_window_sticky(self)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setFixedSize(self.WIDTH, self.HEIGHT)
 
         self._border_color = QColor("#3F3F46")
@@ -235,6 +234,7 @@ class PositionPromptHUD(QWidget):
         super().__init__(parent)
         self._is_window = True
         self._muted = False
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.WindowStaysOnTopHint |
@@ -242,9 +242,7 @@ class PositionPromptHUD(QWidget):
             Qt.WindowType.WindowDoesNotAcceptFocus
         )
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setFixedSize(self.WIDTH, self.HEIGHT)
-        make_window_sticky(self)
 
         self._bg_color = QColor("#FACC15")
         self._border_color = QColor("#CA8A04")

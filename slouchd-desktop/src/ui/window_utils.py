@@ -2,10 +2,18 @@ import sys
 import ctypes
 import ctypes.util
 from ctypes import c_ulong, c_long, c_char_p, c_int, c_void_p, Structure, byref
+from PySide6.QtGui import QGuiApplication
 
 _x11 = None
 _x11_display = None
 _x11_init_attempted = False
+
+_XErrorHandler = ctypes.CFUNCTYPE(c_int, c_void_p, c_void_p)
+
+def _dummy_error_handler(display, error_event):
+    return 0
+
+_error_handler_cb = _XErrorHandler(_dummy_error_handler)
 
 
 class _XClientMessageEvent(Structure):
@@ -28,6 +36,10 @@ def _get_x11():
     _x11_init_attempted = True
 
     if not sys.platform.startswith("linux"):
+        return None, None
+
+    app = QGuiApplication.instance()
+    if app and app.platformName() != "xcb":
         return None, None
 
     try:
@@ -61,6 +73,12 @@ def _get_x11():
         if disp:
             _x11 = lib
             _x11_display = disp
+            try:
+                lib.XSetErrorHandler.argtypes = [_XErrorHandler]
+                lib.XSetErrorHandler.restype = c_void_p
+                lib.XSetErrorHandler(_error_handler_cb)
+            except Exception:
+                pass
     except Exception:
         _x11 = None
         _x11_display = None
@@ -76,14 +94,18 @@ def make_window_sticky(widget):
     if not widget:
         return
 
-    try:
-        win_id = int(widget.winId())
-    except Exception:
-        return
-
     if sys.platform.startswith("linux"):
+        app = QGuiApplication.instance()
+        if app and app.platformName() != "xcb":
+            return
+
         x11, display = _get_x11()
         if not x11 or not display:
+            return
+
+        try:
+            win_id = int(widget.winId())
+        except Exception:
             return
 
         try:
@@ -164,6 +186,9 @@ def raise_window_native(widget):
         except Exception:
             pass
     elif sys.platform.startswith("linux"):
+        app = QGuiApplication.instance()
+        if app and app.platformName() != "xcb":
+            return
         x11, display = _get_x11()
         if x11 and display:
             try:
@@ -177,22 +202,24 @@ def stack_window_above_native(top_widget, bottom_widget):
     """Ensure top_widget is positioned above bottom_widget in the Z-order."""
     if not top_widget or not bottom_widget:
         return
-    try:
-        top_id = int(top_widget.winId())
-        bottom_id = int(bottom_widget.winId())
-    except Exception:
-        return
 
     if sys.platform == "win32":
         try:
+            top_id = int(top_widget.winId())
+            bottom_id = int(bottom_widget.winId())
             import ctypes
             ctypes.windll.user32.SetWindowPos(bottom_id, top_id, 0, 0, 0, 0, 0x0013)
         except Exception:
             pass
     elif sys.platform.startswith("linux"):
+        app = QGuiApplication.instance()
+        if app and app.platformName() != "xcb":
+            return
         x11, display = _get_x11()
         if x11 and display:
             try:
+                top_id = int(top_widget.winId())
+                bottom_id = int(bottom_widget.winId())
                 x11.XRaiseWindow(display, bottom_id)
                 x11.XRaiseWindow(display, top_id)
                 x11.XFlush(display)

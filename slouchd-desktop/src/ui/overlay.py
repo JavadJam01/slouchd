@@ -108,16 +108,15 @@ class MultiScreenDimmer(QWidget):
         self._is_dimmed = False
         self._huds = []
 
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setWindowFlags(	# clickthrough transparent overlay flags
             Qt.WindowType.WindowStaysOnTopHint |
             Qt.WindowType.FramelessWindowHint |
             Qt.WindowType.WindowTransparentForInput |
             Qt.WindowType.Tool
         )
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
-        make_window_sticky(self)
 
         self.banner = SlouchBanner(self)	# [S]louch! banner
         self.label = self.banner
