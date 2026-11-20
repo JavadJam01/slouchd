@@ -2,6 +2,7 @@ import sys
 from PySide6.QtCore import Qt, QTimer, QRectF, Signal, QSize, QPointF
 from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QProgressBar
 from PySide6.QtGui import QGuiApplication, QPainter, QColor, QPen, QPainterPath, QPixmap, QIcon
+from src.ui.window_utils import make_window_sticky, raise_window_native
 
 class CalibrationHUD(QWidget):
     """calibration progress hud"""
@@ -20,6 +21,7 @@ class CalibrationHUD(QWidget):
                 Qt.WindowType.WindowDoesNotAcceptFocus
             )
             self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+            make_window_sticky(self)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setFixedSize(self.WIDTH, self.HEIGHT)
 
@@ -73,17 +75,16 @@ class CalibrationHUD(QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
+        if self._is_window:
+            make_window_sticky(self)
         self._reposition()
 
     def bring_to_front(self):
         """keep hud above overlay windows"""
         self.raise_()
-        if sys.platform == "win32":
-            try:
-                import ctypes
-                ctypes.windll.user32.SetWindowPos(int(self.winId()), 0, 0, 0, 0, 0, 0x0013)
-            except Exception:
-                pass
+        raise_window_native(self)
+        if self._is_window:
+            make_window_sticky(self)
 
     def show_progress(self, pct: int, msg: str = "calibrating..."):
         self._hide_timer.stop()
@@ -232,6 +233,7 @@ class PositionPromptHUD(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._is_window = True
         self._muted = False
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint |
@@ -242,6 +244,7 @@ class PositionPromptHUD(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setFixedSize(self.WIDTH, self.HEIGHT)
+        make_window_sticky(self)
 
         self._bg_color = QColor("#FACC15")
         self._border_color = QColor("#CA8A04")
@@ -367,17 +370,16 @@ class PositionPromptHUD(QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
+        if self._is_window:
+            make_window_sticky(self)
         self._reposition()
 
     def bring_to_front(self):
         """keep hud above overlay windows"""
         self.raise_()
-        if sys.platform == "win32":
-            try:
-                import ctypes
-                ctypes.windll.user32.SetWindowPos(int(self.winId()), 0, 0, 0, 0, 0, 0x0013)
-            except Exception:
-                pass
+        raise_window_native(self)
+        if self._is_window:
+            make_window_sticky(self)
 
     def hide(self):
         if hasattr(self, "_auto_hide_timer"):

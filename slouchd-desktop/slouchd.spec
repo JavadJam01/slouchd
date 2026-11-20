@@ -9,6 +9,7 @@ binaries = []
 hiddenimports = [
     'src.startup',
     'src.logging_config',
+    'src.ui.window_utils',
 ]
 
 if sys.platform == "win32":

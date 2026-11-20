@@ -6,6 +6,7 @@ from PySide6.QtGui import (
     QRadialGradient, QBrush, QPixmap
 )
 from src.config import get_resource_path
+from src.ui.window_utils import make_window_sticky, stack_window_above_native
 
 class SlouchBanner(QWidget):
     """transparent S logo followed by LOUCH"""
@@ -116,6 +117,7 @@ class MultiScreenDimmer(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+        make_window_sticky(self)
 
         self.banner = SlouchBanner(self)	# [S]louch! banner
         self.label = self.banner
@@ -144,12 +146,7 @@ class MultiScreenDimmer(QWidget):
                     hud.bring_to_front()
                 else:
                     hud.raise_()
-                if sys.platform == "win32":
-                    try:
-                        import ctypes
-                        ctypes.windll.user32.SetWindowPos(int(self.winId()), int(hud.winId()), 0, 0, 0, 0, 0x0013)
-                    except Exception:
-                        pass
+                stack_window_above_native(hud, self)
 
     @Slot()
     def _on_screens_changed(self, *args):
@@ -210,6 +207,7 @@ class MultiScreenDimmer(QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
+        make_window_sticky(self)
         self._reposition_banner()
 
     def set_dimmed(self, dim: bool):
@@ -221,6 +219,7 @@ class MultiScreenDimmer(QWidget):
         if dim:
             self.update_geometry()
             self.show()
+            make_window_sticky(self)
             self._reposition_banner()
             self.update()
             self._keep_huds_on_top()
