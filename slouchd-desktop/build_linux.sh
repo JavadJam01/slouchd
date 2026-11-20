@@ -72,12 +72,15 @@ ln -s /opt/slouchd/slouchd "$DEB_STAGING/usr/bin/slouchd"
 cp installer/linux/slouchd.desktop "$DEB_STAGING/usr/share/applications/"
 cp assets/icon.png "$DEB_STAGING/usr/share/icons/hicolor/512x512/apps/slouchd.png"
 
+INSTALLED_SIZE=$(du -sk --exclude=DEBIAN "$DEB_STAGING" | awk '{print $1}')
+
 cat << EOF > "$DEB_STAGING/DEBIAN/control"
 Package: slouchd
 Version: $CLEAN_VERSION
 Section: utils
 Priority: optional
 Architecture: amd64
+Installed-Size: $INSTALLED_SIZE
 Maintainer: Javad Jam <slouchd@users.noreply.github.com>
 Depends: libc6, libgl1, libegl1, libdbus-1-3, libxcb-cursor0
 Description: gentle multi-screen posture and slouch monitor
