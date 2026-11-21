@@ -1,3 +1,5 @@
+import os
+import sys
 import json
 import re
 import urllib.request
@@ -65,6 +67,18 @@ class UpdateCheckWorker(QThread):
             "error_msg": ""
         }
 
+        ssl_ctx = None
+        try:
+            import ssl
+            ssl_ctx = ssl.create_default_context()
+            try:
+                import certifi
+                ssl_ctx.load_verify_locations(cafile=certifi.where())
+            except Exception:
+                pass
+        except Exception:
+            pass
+
         # 1. attempt github rest api
         api_url = f"https://api.github.com/repos/{self.repo}/releases/latest"
         api_req = urllib.request.Request(
@@ -76,7 +90,7 @@ class UpdateCheckWorker(QThread):
         )
 
         try:
-            with urllib.request.urlopen(api_req, timeout=5) as response:
+            with urllib.request.urlopen(api_req, timeout=5, context=ssl_ctx) as response:
                 data = json.loads(response.read().decode("utf-8"))
                 latest_tag = data.get("tag_name", "").strip()
                 if latest_tag:
@@ -94,13 +108,23 @@ class UpdateCheckWorker(QThread):
                             None
                         )
                     else:
-                        matched_asset = next(
-                            (a for a in assets if a.get("name", "").endswith(".AppImage")),
-                            None
-                        ) or next(
-                            (a for a in assets if a.get("name", "").endswith(".deb")),
-                            None
-                        )
+                        is_deb_installed = os.path.exists("/opt/slouchd") and not os.environ.get("APPIMAGE")
+                        if is_deb_installed:
+                            matched_asset = next(
+                                (a for a in assets if a.get("name", "").endswith(".deb")),
+                                None
+                            ) or next(
+                                (a for a in assets if a.get("name", "").endswith(".AppImage")),
+                                None
+                            )
+                        else:
+                            matched_asset = next(
+                                (a for a in assets if a.get("name", "").endswith(".AppImage")),
+                                None
+                            ) or next(
+                                (a for a in assets if a.get("name", "").endswith(".deb")),
+                                None
+                            )
 
                     if matched_asset:
                         result["download_url"] = matched_asset.get("browser_download_url", result["release_url"])
@@ -124,7 +148,7 @@ class UpdateCheckWorker(QThread):
         )
 
         try:
-            with urllib.request.urlopen(web_req, timeout=6) as response:
+            with urllib.request.urlopen(web_req, timeout=6, context=ssl_ctx) as response:
                 final_url = response.geturl()
                 if "/tag/" in final_url:
                     latest_tag = final_url.split("/tag/")[-1].strip("/")
@@ -135,8 +159,10 @@ class UpdateCheckWorker(QThread):
                     clean_tag = latest_tag if latest_tag.startswith("v") else f"v{latest_tag}"
                     if sys.platform == "win32":
                         result["download_url"] = f"https://github.com/{self.repo}/releases/download/{latest_tag}/slouchd-setup-{clean_tag}.exe"
+                    elif os.path.exists("/opt/slouchd") and not os.environ.get("APPIMAGE"):
+                        result["download_url"] = f"https://github.com/{self.repo}/releases/download/{latest_tag}/slouchd_{clean_latest}_amd64.deb"
                     else:
-                        result["download_url"] = f"https://github.com/{self.repo}/releases/download/{latest_tag}/slouchd-{clean_tag}-x86_64.AppImage"
+                        result["download_url"] = f"https://github.com/{self.repo}/releases/download/{latest_tag}/slouchd-{clean_latest}-x86_64.AppImage"
 
                     cur_tuple = parse_version_tuple(self.current_version)
                     latest_tuple = parse_version_tuple(clean_latest)
