@@ -14,7 +14,7 @@ if [ -z "$VERSION" ]; then
     fi
 fi
 if [ -z "$VERSION" ]; then
-    VERSION="0.2.4"
+    VERSION="0.2.5"
 fi
 CLEAN_VERSION="${VERSION#v}"
 
