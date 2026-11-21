@@ -668,10 +668,16 @@ class SettingsDialog(QWidget):
         self.apply_settings()
 
     def reject(self):
-        self.close()
+        if self.window() and self.window() != self:
+            self.window().close()
+        else:
+            self.close()
 
     def accept(self):
-        self.close()
+        if self.window() and self.window() != self:
+            self.window().close()
+        else:
+            self.close()
 
     def restore_defaults(self):
         default_source = DEFAULT_CONFIG.get("perception_source", "camera")

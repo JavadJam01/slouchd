@@ -342,9 +342,17 @@ class SlouchdWindow(QWidget):
         self.camera_preview_needed.emit(False)
         super().hideEvent(event)
 
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape:
+            self.close()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
     def closeEvent(self, event):
         self.camera_preview_needed.emit(False)
-        super().closeEvent(event)
+        event.ignore()
+        self.hide()
 
     def changeEvent(self, event):
         if event.type() == QEvent.Type.WindowStateChange:
