@@ -73,12 +73,6 @@ def _get_x11():
         if disp:
             _x11 = lib
             _x11_display = disp
-            try:
-                lib.XSetErrorHandler.argtypes = [_XErrorHandler]
-                lib.XSetErrorHandler.restype = c_void_p
-                lib.XSetErrorHandler(_error_handler_cb)
-            except Exception:
-                pass
     except Exception:
         _x11 = None
         _x11_display = None
@@ -91,7 +85,7 @@ def make_window_sticky(widget):
     Ensure the widget appears on all workspaces/virtual desktops
     and stays on top on GNOME Mutter / X11 / XWayland.
     """
-    if not widget:
+    if not widget or not widget.isWindow():
         return
 
     if sys.platform.startswith("linux"):
@@ -172,7 +166,7 @@ def make_window_sticky(widget):
 
 def raise_window_native(widget):
     """Raise window to top natively across window managers."""
-    if not widget:
+    if not widget or not widget.isWindow():
         return
     try:
         win_id = int(widget.winId())
@@ -200,7 +194,7 @@ def raise_window_native(widget):
 
 def stack_window_above_native(top_widget, bottom_widget):
     """Ensure top_widget is positioned above bottom_widget in the Z-order."""
-    if not top_widget or not bottom_widget:
+    if not top_widget or not bottom_widget or not top_widget.isWindow() or not bottom_widget.isWindow():
         return
 
     if sys.platform == "win32":

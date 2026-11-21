@@ -2,6 +2,19 @@ import sys
 import os
 
 if sys.platform.startswith("linux"):
+    # Preload host system libxkbcommon to avoid symbol/layout mismatches from bundled manylinux wheels
+    import ctypes
+    for _lib_name in [
+        "/usr/lib/x86_64-linux-gnu/libxkbcommon.so.0",
+        "/usr/lib/x86_64-linux-gnu/libxkbcommon-x11.so.0",
+        "libxkbcommon.so.0",
+        "libxkbcommon-x11.so.0",
+    ]:
+        try:
+            ctypes.CDLL(_lib_name, mode=ctypes.RTLD_GLOBAL)
+        except Exception:
+            pass
+
     # on Linux Wayland sessions (e.g. GNOME Mutter), xdg_toplevel windows cannot be positioned
     # via move(), which causes overlay HUDs to be centered by the window manager.
     # preferring xcb (XWayland) ensures proper absolute positioning, stays-on-top, and click-through transparency.
@@ -45,7 +58,7 @@ class SlouchdApp:
             except Exception:
                 pass
 
-        self.app = QApplication(sys.argv)
+        self.app = QApplication.instance() or QApplication(sys.argv)
         self.app.setQuitOnLastWindowClosed(False)
         self.app.setApplicationName("slouchd")
 
@@ -62,7 +75,8 @@ class SlouchdApp:
         self.dimmer = MultiScreenDimmer(self.config)
         self.tray = SlouchdTrayIcon()
 
-        self._calibrating = False
+        self._shortcut_calibrating = False
+        self._page_calibrating = False
         self._calib_samples = []
         self._calib_cooldown_until = 0.0
         self._calib_hud = CalibrationHUD()
@@ -110,6 +124,9 @@ class SlouchdApp:
 
         self.main_window = SlouchdWindow(self.config)
         self.main_window.tag_calibrate_requested.connect(self.ble_worker.calibrate)
+        self.main_window.calibrated.connect(self.on_calibration_completed)
+        self.main_window.calibration_started.connect(self.on_calibration_started)
+        self.main_window.calibration_cancelled.connect(self.on_calibration_cancelled)
         self.main_window.settings_changed.connect(self.on_settings_changed)
         self.main_window.camera_preview_needed.connect(self.on_camera_preview_needed)
 
@@ -245,9 +262,11 @@ class SlouchdApp:
             self._recent_tag_pitches.clear()
             if self._tag_disconnect_time == 0.0:
                 self._tag_disconnect_time = time.time()
-            if self._calibrating:
-                self._calibrating = False
+            if self._shortcut_calibrating:
+                self._shortcut_calibrating = False
                 self._calib_hud.show_error("tag disconnected")
+            if self._page_calibrating:
+                self._page_calibrating = False
             self.dimmer.set_dimmed(False)
             if self._was_slouching:
                 self._handle_slouch_ended()
@@ -315,7 +334,7 @@ class SlouchdApp:
                 self._user_was_away = False
                 self._show_welcome_back()
 
-        if self._calibrating and self.config.get("perception_source", "tag") == "tag":
+        if self._shortcut_calibrating and self.config.get("perception_source", "tag") == "tag":
             pitch = data.get("pitch")
             if pitch is not None:
                 self._calib_samples.append(float(pitch))
@@ -383,7 +402,7 @@ class SlouchdApp:
         if qimg is not None:
             self.main_window.update_frame(qimg, metrics)
 
-        if self._calibrating and self.config.get("perception_source", "tag") == "camera":
+        if self._shortcut_calibrating and self.config.get("perception_source", "tag") == "camera":
             if metrics and metrics.get("visibility", 0.0) >= 0.35 and "normalized_ear_shoulder" in metrics:
                 self._calib_samples.append(metrics)
                 pct = int((len(self._calib_samples) / 20.0) * 100)
@@ -563,6 +582,9 @@ class SlouchdApp:
 
     @Slot()
     def trigger_shortcut_calibration(self):
+        if self._page_calibrating:
+            return
+
         self._alarm_history.clear()
         self._sustained_timer.stop()
         self._prompt_hud.hide()
@@ -578,7 +600,7 @@ class SlouchdApp:
             self._calib_hud.show_error("tag not connected")
             return
 
-        self._calibrating = True
+        self._shortcut_calibrating = True
         self._calib_samples.clear()
         if source == "camera":
             self.camera_worker.set_paused(False)
@@ -587,7 +609,7 @@ class SlouchdApp:
         self._calib_hud.show_progress(0, "calibrating posture...")
 
     def _finalize_shortcut_calibration(self):
-        self._calibrating = False
+        self._shortcut_calibrating = False
         self._alarm_history.clear()
         self._sustained_timer.stop()
         self._prompt_hud.hide()
@@ -623,6 +645,46 @@ class SlouchdApp:
             self.tray.update_status(is_calibrated=True, is_slouching=False, user_present=True)
 
         self._calib_hud.show_done("posture calibrated")
+
+    @Slot()
+    def on_calibration_started(self):
+        self._page_calibrating = True
+        if self._shortcut_calibrating:
+            self._shortcut_calibrating = False
+        self._calib_hud.hide()
+        self.dimmer.set_dimmed(False)
+        self._was_slouching = False
+        self._alarm_history.clear()
+        self._sustained_timer.stop()
+        self._prompt_hud.hide()
+
+    @Slot()
+    def on_calibration_cancelled(self):
+        self._page_calibrating = False
+        self._calib_cooldown_until = time.time() + 1.0
+
+    @Slot(dict)
+    def on_calibration_completed(self, baseline_data: dict):
+        self._page_calibrating = False
+        self._alarm_history.clear()
+        self._sustained_timer.stop()
+        self._prompt_hud.hide()
+        self._calib_hud.hide()
+        self._was_slouching = False
+        self._tag_slouch_start = 0.0
+        self.dimmer.set_dimmed(False)
+        self._calib_cooldown_until = time.time() + 2.0
+        self._last_welcome_shown_time = time.time()
+        self._startup_welcome_pending = False
+        self._user_was_away = False
+
+        source = self.config.get("perception_source", "tag")
+        user_present = bool(self._tag_connected if source == "tag" else getattr(self, "_camera_user_present", True))
+        self.tray.update_status(is_calibrated=True, is_slouching=False, user_present=user_present)
+
+    @property
+    def _calibrating(self) -> bool:
+        return bool(self._shortcut_calibrating or self._page_calibrating)
 
     def _is_calibrated(self) -> bool:
         source = self.config.get("perception_source", "tag")

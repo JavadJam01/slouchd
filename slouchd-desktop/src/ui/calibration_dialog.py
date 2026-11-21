@@ -142,8 +142,10 @@ class TagPostureMeter(QWidget):
         painter.end()
 
 
-class CalibrationDialog(QDialog):
+class CalibrationDialog(QWidget):
     calibrated = Signal(dict)
+    calibration_started = Signal()
+    calibration_cancelled = Signal()
     tag_calibrate_requested = Signal()
 
     def __init__(self, config_manager, parent=None):
@@ -156,11 +158,14 @@ class CalibrationDialog(QDialog):
         self._samples = []
         self._target_samples = 20
 
+        self._timeout_timer = QTimer(self)
+        self._timeout_timer.setSingleShot(True)
+        self._timeout_timer.timeout.connect(self._on_calibration_timeout)
+
         self.setWindowTitle("slouchd — posture calibration")
         self.setFixedSize(640, 560)
         self.setStyleSheet("""
-            QDialog {
-                background-color: #121215;
+            QWidget {
                 background-color: #000000;
                 color: #E4E4E7;
                 font-family: 'Segoe UI', -apple-system, sans-serif;
@@ -232,20 +237,6 @@ class CalibrationDialog(QDialog):
         btn_layout.setContentsMargins(0, 0, 0, 0)
         btn_layout.setSpacing(0)
 
-        self.btn_close = QPushButton("cancel", self)
-        self.btn_close.setFixedSize(90, 38)
-        self.btn_close.setStyleSheet("""
-            QPushButton {
-                background-color: #27272A;
-                color: #E4E4E7;
-            }
-            QPushButton:hover {
-                background-color: #3F3F46;
-            }
-        """)
-        self.btn_close.clicked.connect(self.reject)
-        self.btn_close.setVisible(False)
-
         self.btn_calibrate = QPushButton("calibrate baseline", self)
         self.btn_calibrate.setFixedSize(290, 52)
         self.btn_calibrate.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -281,7 +272,6 @@ class CalibrationDialog(QDialog):
         btn_layout.addWidget(self.progress_card)
         btn_layout.addWidget(self.btn_calibrate)
         btn_layout.addStretch()
-        btn_layout.addWidget(self.btn_close)
 
         layout.addSpacing(28)
         layout.addLayout(btn_layout)
@@ -308,16 +298,14 @@ class CalibrationDialog(QDialog):
                 font-weight: 500;
             """)
             if self._is_calibrating:
-                self._is_calibrating = False
-                self.btn_calibrate.setEnabled(True)
-                self.btn_calibrate.setText("calibrate baseline")
-                self.progress_card.show_error("camera error")
+                self.cancel_calibration("camera error")
 
     def set_source(self, source: str):
         self.perception_source = source
-        self._is_calibrating = False
+        self.cancel_calibration()
         self._samples.clear()
-        self.btn_calibrate.setText("calibrate baseline")
+        has_calib = bool(self.config.get("baseline", {}).get("calibrated") if source == "camera" else self.config.get("tag_calibrated"))
+        self.btn_calibrate.setText("recalibrate baseline" if has_calib else "calibrate baseline")
         self.btn_calibrate.setEnabled(True)
         self.btn_calibrate.show()
         self.progress_card.hide()
@@ -353,9 +341,10 @@ class CalibrationDialog(QDialog):
     def showEvent(self, event):
         super().showEvent(event)
         self.perception_source = self.config.get("perception_source", "tag")
-        self._is_calibrating = False
+        self.cancel_calibration()
         self._samples.clear()
-        self.btn_calibrate.setText("calibrate baseline")
+        has_calib = bool(self.config.get("baseline", {}).get("calibrated") if self.perception_source == "camera" else self.config.get("tag_calibrated"))
+        self.btn_calibrate.setText("recalibrate baseline" if has_calib else "calibrate baseline")
         self.btn_calibrate.setEnabled(True)
         self.btn_calibrate.show()
         self.progress_card.hide()
@@ -370,6 +359,11 @@ class CalibrationDialog(QDialog):
                 font-size: 13px;
             """)
         self._apply_mode()
+
+    def hideEvent(self, event):
+        if self._is_calibrating:
+            self.cancel_calibration()
+        super().hideEvent(event)
 
     def update_tag_data(self, data: dict):
         if self.perception_source == "tag":
@@ -408,49 +402,69 @@ class CalibrationDialog(QDialog):
 
                 if len(self._samples) >= self._target_samples:
                     self._finalize_camera_calibration()
+            elif not self._samples:
+                self.progress_card.show_progress(0, "position head & shoulders in view...")
 
     def start_calibration(self):
         if self.perception_source == "tag":
             if not self.tag_meter.is_connected:
-                QMessageBox.warning(
-                    self,
-                    "tag not connected",
-                    "ensure slouchd-tag is turned on and connected."
-                )
+                self.tag_meter.set_status_message("tag not connected — please turn on slouchd-tag")
+                self.btn_calibrate.hide()
+                self.progress_card.show_error("tag not connected")
                 return
             self._is_calibrating = True
             self._samples.clear()
             self.btn_calibrate.hide()
             self.progress_card.show_progress(0, "hold upright posture...")
+            self.calibration_started.emit()
+            self._timeout_timer.start(15000)
         else:
-            if not self.latest_metrics or self.latest_metrics.get("visibility", 0) < 0.35:
-                QMessageBox.warning(
-                    self,
-                    "calibration warning",
-                    "position head and shoulders in view before calibrating."
-                )
-                return
-
             self._is_calibrating = True
             self._samples.clear()
             self.btn_calibrate.hide()
-            self.progress_card.show_progress(0, "hold upright posture...")
+            has_pose = bool(self.latest_metrics and self.latest_metrics.get("visibility", 0.0) >= 0.35)
+            msg = "hold upright posture..." if has_pose else "position head & shoulders in view..."
+            self.progress_card.show_progress(0, msg)
+            self.calibration_started.emit()
+            self._timeout_timer.start(20000)
+
+    def cancel_calibration(self, err_msg: str = None):
+        was_calibrating = self._is_calibrating
+        self._is_calibrating = False
+        self._timeout_timer.stop()
+        self._samples.clear()
+        if err_msg:
+            self.btn_calibrate.hide()
+            self.progress_card.show_error(err_msg)
+        else:
+            self.progress_card.hide()
+            self.btn_calibrate.setEnabled(True)
+            self.btn_calibrate.show()
+        if was_calibrating:
+            self.calibration_cancelled.emit()
+
+    def _on_calibration_timeout(self):
+        if self._is_calibrating:
+            self.cancel_calibration("calibration timed out")
 
     def _finalize_tag_calibration(self):
         self._is_calibrating = False
+        self._timeout_timer.stop()
         avg_pitch = sum(self._samples) / float(len(self._samples))
         self.config.set("tag_baseline_pitch", float(avg_pitch))
         self.config.set("tag_calibrated", True)
+        self.config.save()
 
         self.tag_calibrate_requested.emit()
         self.calibrated.emit({"source": "tag", "baseline_pitch": avg_pitch, "calibrated": True})
 
         self.btn_calibrate.setEnabled(True)
-        self.btn_calibrate.setText("calibrate baseline")
+        self.btn_calibrate.setText("recalibrate baseline")
         self.progress_card.show_done("posture calibrated")
 
     def _finalize_camera_calibration(self):
         self._is_calibrating = False
+        self._timeout_timer.stop()
         n = float(len(self._samples))
         
         avg_ear_shoulder = sum(s["ear_shoulder_dist"] for s in self._samples) / n
@@ -469,8 +483,9 @@ class CalibrationDialog(QDialog):
         }
 
         self.config.set("baseline", baseline_data)
+        self.config.save()
         self.calibrated.emit(baseline_data)
 
         self.btn_calibrate.setEnabled(True)
-        self.btn_calibrate.setText("calibrate baseline")
+        self.btn_calibrate.setText("recalibrate baseline")
         self.progress_card.show_done("posture calibrated")

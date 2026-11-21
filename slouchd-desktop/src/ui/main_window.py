@@ -174,6 +174,9 @@ class SlouchdWindow(QWidget):
     camera_preview_needed = Signal(bool)
     settings_changed = Signal(dict)
     tag_calibrate_requested = Signal()
+    calibrated = Signal(dict)
+    calibration_started = Signal()
+    calibration_cancelled = Signal()
 
     def __init__(self, config_manager, parent=None):
         super().__init__(parent)
@@ -250,9 +253,10 @@ class SlouchdWindow(QWidget):
         # tab 1: calibrate
         self.calibration_page = CalibrationDialog(self.config, self)
         self.calibration_page.setWindowFlags(Qt.Widget)
-        if hasattr(self.calibration_page, "btn_close"):
-            self.calibration_page.btn_close.setVisible(False)
         self.calibration_page.tag_calibrate_requested.connect(self.tag_calibrate_requested.emit)
+        self.calibration_page.calibrated.connect(self.calibrated.emit)
+        self.calibration_page.calibration_started.connect(self.calibration_started.emit)
+        self.calibration_page.calibration_cancelled.connect(self.calibration_cancelled.emit)
         self.tabs.addTab(self.calibration_page, "calibrate")
 
         # tab 2: settings
@@ -329,6 +333,10 @@ class SlouchdWindow(QWidget):
         is_calibrate = (index == 0)
         is_camera = (self.config.get("perception_source", "tag") == "camera")
         self.camera_preview_needed.emit(is_calibrate and is_camera and self.isVisible() and not self.isMinimized())
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._on_tab_changed(self.tabs.currentIndex())
 
     def hideEvent(self, event):
         self.camera_preview_needed.emit(False)

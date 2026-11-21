@@ -31,6 +31,11 @@ for package_name in packages_to_collect:
     binaries += pkg_binaries
     hiddenimports += pkg_hidden
 
+if sys.platform.startswith("linux"):
+    # Avoid bundling opencv's outdated xkb/xcb libraries that conflict with system Qt and Wayland/X11
+    system_conflicts = ('libxkbcommon', 'libxcb-xkb')
+    binaries = [b for b in binaries if not any(c in b[0] for c in system_conflicts)]
+
 a = Analysis(
     ['src/main.py'],
     pathex=['.'],
@@ -44,6 +49,10 @@ a = Analysis(
     noarchive=False,
     optimize=0,
 )
+
+if sys.platform.startswith("linux"):
+    system_conflicts = ('libxkbcommon', 'libxcb-xkb')
+    a.binaries = [b for b in a.binaries if not any(c in b[0] for c in system_conflicts)]
 
 pyz = PYZ(a.pure)
 

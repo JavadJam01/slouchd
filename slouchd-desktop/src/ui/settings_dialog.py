@@ -11,7 +11,7 @@ from pathlib import Path
 from src.config import get_resource_path, DEFAULT_CONFIG
 from src.audio import play_audio_file
 
-class SettingsDialog(QDialog):
+class SettingsDialog(QWidget):
     settings_changed = Signal(dict)
     calibrate_requested = Signal()
 
@@ -25,8 +25,7 @@ class SettingsDialog(QDialog):
         self.setWindowTitle("slouchd settings")
         self.setMinimumWidth(540)
         self.setStyleSheet("""
-            QDialog {
-                background-color: #121216;
+            QWidget {
                 background-color: #000000;
                 color: #E4E4E7;
                 font-family: 'Segoe UI', -apple-system, sans-serif;
@@ -639,13 +638,11 @@ class SettingsDialog(QDialog):
     def _calibrate_tag(self):
         self.radio_tag.setChecked(True)
         self.apply_settings()
-        self.accept()
         self.calibrate_requested.emit()
 
     def _calibrate_cam(self):
         self.radio_camera.setChecked(True)
         self.apply_settings()
-        self.accept()
         self.calibrate_requested.emit()
 
     def apply_settings(self):
@@ -669,7 +666,12 @@ class SettingsDialog(QDialog):
 
     def save_settings(self):
         self.apply_settings()
-        self.accept()
+
+    def reject(self):
+        self.close()
+
+    def accept(self):
+        self.close()
 
     def restore_defaults(self):
         default_source = DEFAULT_CONFIG.get("perception_source", "camera")

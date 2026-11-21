@@ -13,8 +13,8 @@ class CalibrationHUD(QWidget):
     def __init__(self, parent=None, is_window: bool = True):
         super().__init__(parent)
         self._is_window = is_window
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         if is_window:
+            self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
             self.setWindowFlags(
                 Qt.WindowType.FramelessWindowHint |
                 Qt.WindowType.WindowStaysOnTopHint |
@@ -76,14 +76,15 @@ class CalibrationHUD(QWidget):
         super().showEvent(event)
         if self._is_window:
             make_window_sticky(self)
-        self._reposition()
+            self._reposition()
 
     def bring_to_front(self):
         """keep hud above overlay windows"""
+        if not self._is_window:
+            return
         self.raise_()
         raise_window_native(self)
-        if self._is_window:
-            make_window_sticky(self)
+        make_window_sticky(self)
 
     def show_progress(self, pct: int, msg: str = "calibrating..."):
         self._hide_timer.stop()
@@ -106,22 +107,22 @@ class CalibrationHUD(QWidget):
             }
         """)
         self.bar.setValue(pct)
-        self._reposition()
         self.update()
         self.show()
-        self._reposition()
-        self.bring_to_front()
+        if self._is_window:
+            self._reposition()
+            self.bring_to_front()
 
     def show_done(self, msg: str = "posture calibrated"):
         self._border_color = QColor("#10B981")
         self.status_lbl.setText(msg.lower())
         self.status_lbl.setStyleSheet("color: #10B981; font-size: 12px; font-weight: 700; font-family: 'Segoe UI', -apple-system, sans-serif;")
         self.bar.setValue(100)
-        self._reposition()
         self.update()
         self.show()
-        self._reposition()
-        self.bring_to_front()
+        if self._is_window:
+            self._reposition()
+            self.bring_to_front()
         self._hide_timer.start(1200)
 
     def show_error(self, err_msg: str):
@@ -140,11 +141,11 @@ class CalibrationHUD(QWidget):
             }
         """)
         self.bar.setValue(100)
-        self._reposition()
         self.update()
         self.show()
-        self._reposition()
-        self.bring_to_front()
+        if self._is_window:
+            self._reposition()
+            self.bring_to_front()
         self._hide_timer.start(1600)
 
     def paintEvent(self, event):

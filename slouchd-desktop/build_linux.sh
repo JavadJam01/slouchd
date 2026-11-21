@@ -14,7 +14,7 @@ if [ -z "$VERSION" ]; then
     fi
 fi
 if [ -z "$VERSION" ]; then
-    VERSION="0.2.3"
+    VERSION="0.2.4"
 fi
 CLEAN_VERSION="${VERSION#v}"
 
@@ -53,6 +53,8 @@ if [ ! -f "dist/slouchd/slouchd" ]; then
     echo "error: pyinstaller binary dist/slouchd/slouchd not found!" >&2
     exit 1
 fi
+# remove conflicting bundled xkb libraries that break system Qt on Linux
+find dist/slouchd/_internal -name "*xkb*" -delete 2>/dev/null || true
 echo "pyinstaller build succeeded -> dist/slouchd"
 
 mkdir -p dist/installer
@@ -68,6 +70,8 @@ mkdir -p "$DEB_STAGING/usr/share/applications"
 mkdir -p "$DEB_STAGING/usr/share/icons/hicolor/512x512/apps"
 
 cp -r dist/slouchd/* "$DEB_STAGING/opt/slouchd/"
+# remove conflicting bundled xkb libraries that break system Qt on Linux
+rm -f "$DEB_STAGING/opt/slouchd/_internal/libxkbcommon"* "$DEB_STAGING/opt/slouchd/_internal/libxcb-xkb"* || true
 ln -s /opt/slouchd/slouchd "$DEB_STAGING/usr/bin/slouchd"
 cp installer/linux/slouchd.desktop "$DEB_STAGING/usr/share/applications/"
 cp assets/icon.png "$DEB_STAGING/usr/share/icons/hicolor/512x512/apps/slouchd.png"
@@ -103,6 +107,8 @@ mkdir -p "$APPDIR/usr/share/applications"
 mkdir -p "$APPDIR/usr/share/icons/hicolor/512x512/apps"
 
 cp -r dist/slouchd/* "$APPDIR/usr/bin/"
+# remove conflicting bundled xkb libraries that break system Qt on Linux
+rm -f "$APPDIR/usr/bin/_internal/libxkbcommon"* "$APPDIR/usr/bin/_internal/libxcb-xkb"* || true
 cp installer/linux/slouchd.desktop "$APPDIR/slouchd.desktop"
 cp installer/linux/slouchd.desktop "$APPDIR/usr/share/applications/slouchd.desktop"
 cp assets/icon.png "$APPDIR/slouchd.png"

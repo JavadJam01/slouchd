@@ -158,14 +158,17 @@ class PostureDetector:
                         v = getattr(lm, 'presence', 1.0)
                     return float(v) if v is not None else 1.0
 
-                vis_scores = [
-                    _extract_vis(landmarks[0]),
-                    _extract_vis(landmarks[7]),
-                    _extract_vis(landmarks[8]),
-                    _extract_vis(landmarks[11]),
-                    _extract_vis(landmarks[12]),
-                ]
-                min_visibility = float(min(vis_scores))
+                vis_nose = _extract_vis(landmarks[0])
+                vis_l_ear = _extract_vis(landmarks[7])
+                vis_r_ear = _extract_vis(landmarks[8])
+                vis_l_shoulder = _extract_vis(landmarks[11])
+                vis_r_shoulder = _extract_vis(landmarks[12])
+
+                # Nose and shoulders are primary posture anchors; ears may be obscured by headphones or hair
+                ear_vis = max(vis_l_ear, vis_r_ear)
+                if vis_nose >= 0.4 and vis_l_shoulder >= 0.35 and vis_r_shoulder >= 0.35:
+                    ear_vis = max(ear_vis, 0.4)
+                min_visibility = float(min(vis_nose, vis_l_shoulder, vis_r_shoulder, ear_vis))
 
                 ears_midpoint = (l_ear + r_ear) / 2.0
                 shoulders_midpoint = (l_shoulder + r_shoulder) / 2.0
@@ -234,14 +237,17 @@ class PostureDetector:
                         v = getattr(lm, 'presence', 1.0)
                     return float(v) if v is not None else 1.0
 
-                vis_scores = [
-                    _extract_vis(landmarks[0]),
-                    _extract_vis(landmarks[7]),
-                    _extract_vis(landmarks[8]),
-                    _extract_vis(landmarks[11]),
-                    _extract_vis(landmarks[12]),
-                ]
-                min_visibility = float(min(vis_scores))
+                vis_nose = _extract_vis(landmarks[0])
+                vis_l_ear = _extract_vis(landmarks[7])
+                vis_r_ear = _extract_vis(landmarks[8])
+                vis_l_shoulder = _extract_vis(landmarks[11])
+                vis_r_shoulder = _extract_vis(landmarks[12])
+
+                # Nose and shoulders are primary posture anchors; ears may be obscured by headphones or hair
+                ear_vis = max(vis_l_ear, vis_r_ear)
+                if vis_nose >= 0.4 and vis_l_shoulder >= 0.35 and vis_r_shoulder >= 0.35:
+                    ear_vis = max(ear_vis, 0.4)
+                min_visibility = float(min(vis_nose, vis_l_shoulder, vis_r_shoulder, ear_vis))
 
                 ears_midpoint = (l_ear + r_ear) / 2.0
                 shoulders_midpoint = (l_shoulder + r_shoulder) / 2.0
